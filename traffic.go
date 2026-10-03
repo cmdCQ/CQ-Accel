@@ -32,7 +32,11 @@ type Traffic struct {
 	path       string
 }
 
-const trafficMaxKeys = 300
+const (
+	trafficMaxKeys      = 300  // Top 榜最多保留条数
+	trafficKeepDays     = 30   // 只保留最近 N 天的按天统计
+	trafficMaxIPsPerDay = 2000 // 每日去重 IP 上限（防无界增长）
+)
 
 func LoadTraffic(path string) *Traffic {
 	t := &Traffic{path: path, Days: map[string]*DayStat{}, TopUp: map[string]int64{}, TopPath: map[string]int64{}}
@@ -69,9 +73,10 @@ func (t *Traffic) Record(ip, path, up string, n int64, ok bool) {
 	}
 	d.Req++
 	d.Bytes += n
-	if ip != "" && len(d.IPs) < 20000 {
+	if ip != "" && len(d.IPs) < trafficMaxIPsPerDay {
 		d.IPs[ip] = true
 	}
+	t.trimDaysLocked()
 	t.TotalReq++
 	t.TotalBytes += n
 	if up != "" {
@@ -105,15 +110,30 @@ func trim(m map[string]int64) {
 	}
 }
 
+// trimDaysLocked 只保留最近 trafficKeepDays 天（调用方需已持锁）
+func (t *Traffic) trimDaysLocked() {
+	if len(t.Days) <= trafficKeepDays {
+		return
+	}
+	keys := make([]string, 0, len(t.Days))
+	for k := range t.Days {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys[:len(keys)-trafficKeepDays] {
+		delete(t.Days, k)
+	}
+}
+
 func (t *Traffic) Save() error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	b, err := json.MarshalIndent(t, "", "  ")
+	t.mu.Unlock()
 	if err != nil {
 		return err
 	}
 	tmp := t.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := os.WriteFile(tmp, b, 0o640); err != nil {
 		return err
 	}
 	return os.Rename(tmp, t.path)
@@ -149,7 +169,6 @@ func (t *Traffic) snapshot() map[string]any {
 		"total_req":     t.TotalReq,
 		"total_bytes":   t.TotalBytes,
 		"last_seen":     t.LastSeen,
-		"last_ip":       t.LastIP,
 		"last_path":     t.LastPath,
 		"today":         dayView(today),
 		"days":          days,
