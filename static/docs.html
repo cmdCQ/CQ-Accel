@@ -53,7 +53,25 @@ git clone https://gh.somtfly.com/github.com/owner/repo.git</code></pre>
     <pre><code>GET /fetch?u=&lt;urlencode(github_url)&gt;</code></pre>
   </div>
 
-  <h2>3. 元数据 API</h2>
+  <h2>3. 支持加速的内容</h2>
+  <div class="card tblwrap">
+    <table>
+      <thead><tr><th>类型</th><th>说明 / 示例</th></tr></thead>
+      <tbody>
+        <tr><td>Release 附件</td><td><code>github.com/owner/repo/releases/download/…</code>（含 <code>releases/latest/download/…</code>）</td></tr>
+        <tr><td>源码包 archive</td><td><code>github.com/owner/repo/archive/refs/heads|tags/….zip|tar.gz</code></td></tr>
+        <tr><td>codeload</td><td><code>codeload.github.com/…</code>（视上游而定）</td></tr>
+        <tr><td>raw 文件</td><td><code>raw.githubusercontent.com/…</code>、<code>github.com/…/raw/…</code></td></tr>
+        <tr><td>gist</td><td><code>gist.github.com</code> / <code>gist.githubusercontent.com</code></td></tr>
+        <tr><td>git clone / fetch / pull</td><td>smart HTTP（<code>info/refs</code> + POST <code>git-upload-pack</code>）</td></tr>
+        <tr><td>git ls-remote</td><td>查看远程分支/标签</td></tr>
+        <tr><td>头像 / 静态资源</td><td><code>avatars.githubusercontent.com</code>、<code>user-images</code> / <code>camo</code>（视上游而定）</td></tr>
+      </tbody>
+    </table>
+    <div class="sub" style="margin:10px 0 0">不提供：<code>api.github.com</code>（防开放代理滥用）。</div>
+  </div>
+
+  <h2>4. 元数据 API</h2>
   <div class="card tblwrap">
     <table>
       <thead><tr><th>接口</th><th>说明</th></tr></thead>
@@ -67,7 +85,7 @@ git clone https://gh.somtfly.com/github.com/owner/repo.git</code></pre>
     </table>
   </div>
 
-  <h2>4. 调试响应头</h2>
+  <h2>5. 调试响应头</h2>
   <div class="card">
     <p>每次中转响应会带 <code>X-Upstream: &lt;上游名&gt;</code>，便于排查走的是哪条线路。</p>
   </div>
