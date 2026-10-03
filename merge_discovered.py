@@ -35,6 +35,8 @@ def main():
         d = {k: v for k, v in d.items() if not k.startswith("_")}
         if d.get("id") in have_id or host_of(d) in have_host:
             continue
+        # 自动发现的上游标记不可信（降权，优先人工白名单）
+        d["untrusted"] = True
         cur.append(d)
         have_id.add(d.get("id"))
         have_host.add(host_of(d))
