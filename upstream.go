@@ -291,6 +291,13 @@ func (up *Upstream) setSpeed(kbps float64) {
 	up.mu.Lock()
 	up.fails = 0
 	up.OK = true
+	// 平滑：单次探测抖动不直接把一个已知快的节点拉低（保留近期最好值，按 0.8 逐次衰减）；
+	// 只有持续变慢才会真正掉下去。避免“某次探测刚好赶上它忙”就误降到慢线路。
+	if kbps < up.SpeedKB {
+		if decayed := up.SpeedKB * 0.8; decayed > kbps {
+			kbps = decayed
+		}
+	}
 	up.SpeedKB = kbps
 	up.Score = calcScore(up.SpeedKB, up.TTFBms)
 	up.Checked = time.Now().Format("15:04:05")
@@ -313,10 +320,10 @@ var testRawURL = "https://raw.githubusercontent.com/twbs/bootstrap/main/dist/css
 var speedTestURL = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
 const (
-	speedEvery     = 6 * time.Hour // 同一上游多久重新测一次吞吐
+	speedEvery     = 4 * time.Hour // 同一上游多久重新测一次吞吐
 	speedSkipBytes = 1 << 20       // 先丢掉前 1MB（冷启动/回源阶段，测的是慢速）
 	speedReadBytes = 3 << 20       // 再测接下来的 3MB（稳态吞吐）
-	speedParallel  = 6             // 吞吐测试并发上限（高了测的是总带宽而非单上游）
+	speedParallel  = 1             // 吞吐测试串行（并发会让测到的变成“本地总带宽”而非单个上游真实上限）
 )
 
 var speedSem = make(chan struct{}, speedParallel)
