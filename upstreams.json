@@ -24,66 +24,10 @@
     "enabled": true
   },
   {
-    "id": "ghproxy-com",
-    "name": "ghproxy.com",
-    "kind": "prefix",
-    "base": "https://ghproxy.com",
-    "region": "global",
-    "enabled": true
-  },
-  {
-    "id": "llkk",
-    "name": "gh.llkk.cc",
-    "kind": "prefix",
-    "base": "https://gh.llkk.cc",
-    "region": "cn",
-    "enabled": true
-  },
-  {
-    "id": "moeyy",
-    "name": "gh.moeyy.xyz",
-    "kind": "prefix",
-    "base": "https://gh.moeyy.xyz",
-    "region": "cn",
-    "enabled": true
-  },
-  {
-    "id": "ghps",
-    "name": "ghps.cc",
-    "kind": "prefix",
-    "base": "https://ghps.cc",
-    "region": "global",
-    "enabled": true
-  },
-  {
-    "id": "gh-api-999",
-    "name": "gh.api.99988866.xyz",
-    "kind": "prefix",
-    "base": "https://gh.api.99988866.xyz",
-    "region": "cn",
-    "enabled": true
-  },
-  {
-    "id": "ghproxy-cc",
-    "name": "ghproxy.cc",
-    "kind": "param",
-    "base": "https://ghproxy.cc",
-    "region": "cn",
-    "enabled": true
-  },
-  {
     "id": "jsdelivr",
     "name": "jsDelivr",
     "kind": "jsdelivr",
     "region": "global",
-    "enabled": true
-  },
-  {
-    "id": "kkgithub",
-    "name": "kkgithub",
-    "kind": "replace",
-    "domain": "kkgithub.com",
-    "region": "cn",
     "enabled": true
   },
   {
