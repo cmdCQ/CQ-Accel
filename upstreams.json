@@ -1,0 +1,601 @@
+[
+  {
+    "id": "ghproxy-net",
+    "name": "ghproxy.net",
+    "kind": "prefix",
+    "base": "https://ghproxy.net",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ghfast",
+    "name": "ghfast.top",
+    "kind": "prefix",
+    "base": "https://ghfast.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-proxy",
+    "name": "gh-proxy.com",
+    "kind": "prefix",
+    "base": "https://gh-proxy.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-com",
+    "name": "ghproxy.com",
+    "kind": "prefix",
+    "base": "https://ghproxy.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "llkk",
+    "name": "gh.llkk.cc",
+    "kind": "prefix",
+    "base": "https://gh.llkk.cc",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "moeyy",
+    "name": "gh.moeyy.xyz",
+    "kind": "prefix",
+    "base": "https://gh.moeyy.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghps",
+    "name": "ghps.cc",
+    "kind": "prefix",
+    "base": "https://ghps.cc",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-api-999",
+    "name": "gh.api.99988866.xyz",
+    "kind": "prefix",
+    "base": "https://gh.api.99988866.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-cc",
+    "name": "ghproxy.cc",
+    "kind": "param",
+    "base": "https://ghproxy.cc",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "jsdelivr",
+    "name": "jsDelivr",
+    "kind": "jsdelivr",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "kkgithub",
+    "name": "kkgithub",
+    "kind": "replace",
+    "domain": "kkgithub.com",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-proxy-org",
+    "name": "gh-proxy.org",
+    "kind": "prefix",
+    "base": "https://gh-proxy.org",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-2i-gs",
+    "name": "gh.2i.gs",
+    "kind": "prefix",
+    "base": "https://gh.2i.gs",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-fxxk-dedyn-io",
+    "name": "github.fxxk.dedyn.io",
+    "kind": "prefix",
+    "base": "https://github.fxxk.dedyn.io",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-monkeyray-net",
+    "name": "ghproxy.monkeyray.net",
+    "kind": "prefix",
+    "base": "https://ghproxy.monkeyray.net",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-halonice-com",
+    "name": "gh.halonice.com",
+    "kind": "prefix",
+    "base": "https://gh.halonice.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-padao-fun",
+    "name": "gh.padao.fun",
+    "kind": "prefix",
+    "base": "https://gh.padao.fun",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-imciel-com",
+    "name": "ghproxy.imciel.com",
+    "kind": "prefix",
+    "base": "https://ghproxy.imciel.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "git-yylx-win",
+    "name": "git.yylx.win",
+    "kind": "prefix",
+    "base": "https://git.yylx.win",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gitproxy-mrhjx-cn",
+    "name": "gitproxy.mrhjx.cn",
+    "kind": "prefix",
+    "base": "https://gitproxy.mrhjx.cn",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-dpik-top",
+    "name": "github.dpik.top",
+    "kind": "prefix",
+    "base": "https://github.dpik.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-cxkpro-top",
+    "name": "ghproxy.cxkpro.top",
+    "kind": "prefix",
+    "base": "https://ghproxy.cxkpro.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghpxy-hwinzniej-top",
+    "name": "ghpxy.hwinzniej.top",
+    "kind": "prefix",
+    "base": "https://ghpxy.hwinzniej.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghp-keleyaa-com",
+    "name": "ghp.keleyaa.com",
+    "kind": "prefix",
+    "base": "https://ghp.keleyaa.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-ednovas-xyz",
+    "name": "github.ednovas.xyz",
+    "kind": "prefix",
+    "base": "https://github.ednovas.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-chjina-com",
+    "name": "gh.chjina.com",
+    "kind": "prefix",
+    "base": "https://gh.chjina.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "tvv-tw",
+    "name": "tvv.tw",
+    "kind": "prefix",
+    "base": "https://tvv.tw",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-geekery-cn",
+    "name": "github.geekery.cn",
+    "kind": "prefix",
+    "base": "https://github.geekery.cn",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-idayer-com",
+    "name": "gh.idayer.com",
+    "kind": "prefix",
+    "base": "https://gh.idayer.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-cnxiaobai-com",
+    "name": "github.cnxiaobai.com",
+    "kind": "prefix",
+    "base": "https://github.cnxiaobai.com",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-dpik-top",
+    "name": "gh.dpik.top",
+    "kind": "prefix",
+    "base": "https://gh.dpik.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-mlmle-cn",
+    "name": "github.mlmle.cn",
+    "kind": "prefix",
+    "base": "https://github.mlmle.cn",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-tianrld-top",
+    "name": "github.tianrld.top",
+    "kind": "prefix",
+    "base": "https://github.tianrld.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "jiashu-1win-eu-org",
+    "name": "jiashu.1win.eu.org",
+    "kind": "prefix",
+    "base": "https://jiashu.1win.eu.org",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-proxy-memory-echoes-cn",
+    "name": "github-proxy.memory-echoes.cn",
+    "kind": "prefix",
+    "base": "https://github-proxy.memory-echoes.cn",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-788787-xyz",
+    "name": "github.788787.xyz",
+    "kind": "prefix",
+    "base": "https://github.788787.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-catmak-name",
+    "name": "gh.catmak.name",
+    "kind": "prefix",
+    "base": "https://gh.catmak.name",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-shiina-rimo-cafe",
+    "name": "gh.shiina-rimo.cafe",
+    "kind": "prefix",
+    "base": "https://gh.shiina-rimo.cafe",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ggg-clwap-dpdns-org",
+    "name": "ggg.clwap.dpdns.org",
+    "kind": "prefix",
+    "base": "https://ggg.clwap.dpdns.org",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-1ms-xx-kg",
+    "name": "github.1ms.xx.kg",
+    "kind": "prefix",
+    "base": "https://github.1ms.xx.kg",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-ihnic-com",
+    "name": "github.ihnic.com",
+    "kind": "prefix",
+    "base": "https://github.ihnic.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-nxnow-top",
+    "name": "gh.nxnow.top",
+    "kind": "prefix",
+    "base": "https://gh.nxnow.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-boringhex-top",
+    "name": "github.boringhex.top",
+    "kind": "prefix",
+    "base": "https://github.boringhex.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-1k-ink",
+    "name": "gh.1k.ink",
+    "kind": "prefix",
+    "base": "https://gh.1k.ink",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "30006000-xyz",
+    "name": "30006000.xyz",
+    "kind": "prefix",
+    "base": "https://30006000.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-xzhouqd-com",
+    "name": "ghproxy.xzhouqd.com",
+    "kind": "prefix",
+    "base": "https://ghproxy.xzhouqd.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-880824-xyz",
+    "name": "github.880824.xyz",
+    "kind": "prefix",
+    "base": "https://github.880824.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-crdz-eu-org",
+    "name": "github.crdz.eu.org",
+    "kind": "prefix",
+    "base": "https://github.crdz.eu.org",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "getgit-love8yun-eu-org",
+    "name": "getgit.love8yun.eu.org",
+    "kind": "prefix",
+    "base": "https://getgit.love8yun.eu.org",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "proxy-baguoyuyan-com",
+    "name": "proxy.baguoyuyan.com",
+    "kind": "prefix",
+    "base": "https://proxy.baguoyuyan.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-053000-xyz",
+    "name": "ghproxy.053000.xyz",
+    "kind": "prefix",
+    "base": "https://ghproxy.053000.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "git-951959483-xyz",
+    "name": "git.951959483.xyz",
+    "kind": "prefix",
+    "base": "https://git.951959483.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-198962-xyz",
+    "name": "gh.198962.xyz",
+    "kind": "prefix",
+    "base": "https://gh.198962.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-996986-xyz",
+    "name": "gh.996986.xyz",
+    "kind": "prefix",
+    "base": "https://gh.996986.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "git-820828-xyz",
+    "name": "git.820828.xyz",
+    "kind": "prefix",
+    "base": "https://git.820828.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-ddlc-top",
+    "name": "gh.ddlc.top",
+    "kind": "prefix",
+    "base": "https://gh.ddlc.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gp-871201-xyz",
+    "name": "gp.871201.xyz",
+    "kind": "prefix",
+    "base": "https://gp.871201.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "git-tangbai-cc",
+    "name": "git.tangbai.cc",
+    "kind": "prefix",
+    "base": "https://git.tangbai.cc",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-lsdfxdk-nyc-mn",
+    "name": "github.lsdfxdk.nyc.mn",
+    "kind": "prefix",
+    "base": "https://github.lsdfxdk.nyc.mn",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-39-al",
+    "name": "gh.39.al",
+    "kind": "prefix",
+    "base": "https://gh.39.al",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "ghproxy-mirror-skybyte-me",
+    "name": "ghproxy.mirror.skybyte.me",
+    "kind": "prefix",
+    "base": "https://ghproxy.mirror.skybyte.me",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-zzrbk-xyz",
+    "name": "github.zzrbk.xyz",
+    "kind": "prefix",
+    "base": "https://github.zzrbk.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "hub-ddayh-com",
+    "name": "hub.ddayh.com",
+    "kind": "prefix",
+    "base": "https://hub.ddayh.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "kenyu-ggff-net",
+    "name": "kenyu.ggff.net",
+    "kind": "prefix",
+    "base": "https://kenyu.ggff.net",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-noki-icu",
+    "name": "gh.noki.icu",
+    "kind": "prefix",
+    "base": "https://gh.noki.icu",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "g-blfrp-cn",
+    "name": "g.blfrp.cn",
+    "kind": "prefix",
+    "base": "https://g.blfrp.cn",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghfile-geekertao-top",
+    "name": "ghfile.geekertao.top",
+    "kind": "prefix",
+    "base": "https://ghfile.geekertao.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "ghm-078465-xyz",
+    "name": "ghm.078465.xyz",
+    "kind": "prefix",
+    "base": "https://ghm.078465.xyz",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "github-chenc-dev",
+    "name": "github.chenc.dev",
+    "kind": "prefix",
+    "base": "https://github.chenc.dev",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-proxy-lixxing-top",
+    "name": "github-proxy.lixxing.top",
+    "kind": "prefix",
+    "base": "https://github-proxy.lixxing.top",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "gh-monlor-com",
+    "name": "gh.monlor.com",
+    "kind": "prefix",
+    "base": "https://gh.monlor.com",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "gh-b52m-cn",
+    "name": "gh.b52m.cn",
+    "kind": "prefix",
+    "base": "https://gh.b52m.cn",
+    "region": "cn",
+    "enabled": true
+  },
+  {
+    "id": "fastgit-cc",
+    "name": "fastgit.cc",
+    "kind": "prefix",
+    "base": "https://fastgit.cc",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "github-xxlab-tech",
+    "name": "github.xxlab.tech",
+    "kind": "prefix",
+    "base": "https://github.xxlab.tech",
+    "region": "global",
+    "enabled": true
+  },
+  {
+    "id": "proxy-yaoyaoling-net",
+    "name": "proxy.yaoyaoling.net",
+    "kind": "prefix",
+    "base": "https://proxy.yaoyaoling.net",
+    "region": "global",
+    "enabled": true
+  }
+]
