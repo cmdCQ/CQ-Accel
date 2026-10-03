@@ -172,7 +172,7 @@ func (t *Traffic) snapshot() map[string]any {
 		"last_path":     t.LastPath,
 		"today":         dayView(today),
 		"days":          days,
-		"top_upstreams": topN(t.TopUp, 8),
+		"top_upstreams": topN(t.TopUp, 5),
 		"top_paths":     topN(t.TopPath, 8),
 	}
 }
