@@ -85,9 +85,12 @@ func (t *Traffic) Record(ip, path, up string, n int64, ok bool) {
 	if path != "" {
 		t.TopPath[path]++
 	}
-	t.LastSeen = now.Format(time.RFC3339)
-	t.LastIP = ip
-	t.LastPath = path
+	// 只记录真实外部访客（跳过 127.0.0.1 / 内网 / 隧道本机），否则"最近访问"会被本机自测覆盖
+	if isPublicIP(ip) {
+		t.LastSeen = now.Format(time.RFC3339)
+		t.LastIP = ip
+		t.LastPath = path
+	}
 	trim(t.TopUp)
 	trim(t.TopPath)
 }
@@ -169,6 +172,7 @@ func (t *Traffic) snapshot() map[string]any {
 		"total_req":     t.TotalReq,
 		"total_bytes":   t.TotalBytes,
 		"last_seen":     t.LastSeen,
+		"last_ip":       t.LastIP,
 		"last_path":     t.LastPath,
 		"today":         dayView(today),
 		"days":          days,
@@ -202,6 +206,15 @@ func topN(m map[string]int64, n int) []map[string]any {
 		out = append(out, map[string]any{"name": x.k, "req": x.v})
 	}
 	return out
+}
+
+// isPublicIP 判断是否为公网 IP（排除回环、内网、链路本地等）
+func isPublicIP(s string) bool {
+	ip := net.ParseIP(strings.TrimSpace(s))
+	if ip == nil {
+		return false
+	}
+	return !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
 }
 
 func clientIP(r *http.Request) string {
