@@ -167,6 +167,21 @@ func relay(w http.ResponseWriter, r *http.Request, raw string) {
 	http.Error(w, "all upstreams failed: "+errStr(lastErr), http.StatusBadGateway)
 }
 
+// isRenderableType 判断 Content-Type 是否属于“浏览器可内联渲染/执行”的危险类型
+func isRenderableType(ct string) bool {
+	ct = strings.ToLower(strings.TrimSpace(ct))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	switch ct {
+	case "text/html", "application/xhtml+xml", "image/svg+xml", "application/xml",
+		"text/xml", "application/javascript", "text/javascript", "application/ecmascript",
+		"text/ecmascript", "application/json", "text/vtt", "application/rss+xml", "application/atom+xml":
+		return true
+	}
+	return false
+}
+
 // isGitRPCPath 判断是否 git 智能 HTTP 的 RPC 端点
 func isGitRPCPath(p string) bool {
 	return strings.Contains(p, "/git-upload-pack") || strings.Contains(p, "/git-receive-pack")
@@ -213,6 +228,14 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 	}
 	w.Header().Set("X-Upstream", up.Name)
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// H2-安全：剔除上游可内联/执行的内容类型，强制当附件下载，防止 gh 域内联 XSS
+	if isRenderableType(w.Header().Get("Content-Type")) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if w.Header().Get("Content-Disposition") == "" {
+			w.Header().Set("Content-Disposition", "attachment")
+		}
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(resp.StatusCode)
 	if r.Method == http.MethodHead {
 		return 0, nil
