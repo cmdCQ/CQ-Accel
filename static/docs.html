@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CQ-Accel · API 文档</title>
+<style>
+  :root{--bg:#0b0e14;--card:#131824;--fg:#e6edf3;--dim:#8b949e;--acc:#3fb950;--acc2:#58a6ff;--bd:#232b3a}
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:40px 20px;width:100%}
+  h1{font-size:26px;margin:0 0 6px}
+  h2{font-size:18px;margin:30px 0 10px;border-left:3px solid var(--acc);padding-left:10px}
+  .sub{color:var(--dim);margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;margin-bottom:18px}
+  code{color:var(--acc2);word-break:break-all;overflow-wrap:anywhere}
+  pre{background:#0d1117;border:1px solid var(--bd);border-radius:8px;padding:12px;overflow-x:auto;margin:8px 0}
+  pre code{color:#e6edf3}
+  .tag{font-size:12px;padding:2px 8px;border-radius:999px;background:#3fb95022;color:var(--acc);border:1px solid #3fb95055;white-space:nowrap}
+  .tag.p{background:#1f6feb22;color:var(--acc2);border-color:#1f6feb55}
+  .link{display:flex;gap:8px;align-items:center;margin:8px 0;background:#0d1117;border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+  .link code{flex:1;min-width:0}
+  .cp{background:#21262d;color:var(--fg);padding:6px 10px;font-size:12px;border-radius:6px;cursor:pointer;border:0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  .tblwrap{overflow-x:auto}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  th{color:var(--dim);font-weight:500}
+  a{color:var(--acc2)}
+  @media(max-width:560px){.wrap{padding:24px 14px}.link{flex-direction:column;align-items:stretch}.link .cp{align-self:flex-end}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CQ-Accel <span class="tag">API 文档</span></h1>
+  <div class="sub">GitHub 加速聚合中转 · 公开 · 不限速 · 纯流式中转。 <a href="/">← 返回首页</a></div>
+
+  <h2>1. 直接用（路径即原 GitHub 路径）</h2>
+  <div class="card">
+    <p>把 <code>https://github.com/...</code> 里的 <code>github.com</code> 换成站点域名即可，支持 <b>Range 断点续传</b> 与 <b>HEAD</b>：</p>
+    <pre><code># 下载 release 资源
+curl -L -O "https://gh.somtfly.com/github.com/owner/repo/releases/download/v1.0/x.zip"
+
+# raw / archive / codeload / gist 同理
+curl -L -O "https://gh.somtfly.com/raw.githubusercontent.com/owner/repo/main/file.txt"
+
+# git clone
+git clone https://gh.somtfly.com/github.com/owner/repo.git</code></pre>
+  </div>
+
+  <h2>2. 参数式</h2>
+  <div class="card">
+    <pre><code>GET /fetch?u=&lt;urlencode(github_url)&gt;</code></pre>
+  </div>
+
+  <h2>3. 元数据 API</h2>
+  <div class="card tblwrap">
+    <table>
+      <thead><tr><th>接口</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>/api/health</code></td><td>服务存活</td></tr>
+        <tr><td><code>/api/upstreams</code></td><td>上游池 + 健康（延迟/速度/可用）</td></tr>
+        <tr><td><code>/api/stats</code></td><td>上游池统计汇总</td></tr>
+        <tr><td><code>/api/resolve?u=&lt;url&gt;</code></td><td>解析可选线路列表</td></tr>
+        <tr><td><code>/api/best?u=&lt;url&gt;</code></td><td>当前最优上游</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>4. 调试响应头</h2>
+  <div class="card">
+    <p>每次中转响应会带 <code>X-Upstream: &lt;上游名&gt;</code>，便于排查走的是哪条线路。</p>
+  </div>
+
+  <div class="card">
+    <strong>提示</strong>
+    <div class="sub" style="margin:8px 0 0">仅允许 GitHub 域名；重定向有最终域名白名单校验；内容版权归原作者，本服务只做聚合中转。</div>
+  </div>
+</div>
+<script>
+document.addEventListener("click", e=>{
+  const b=e.target.closest(".cp"); if(!b) return;
+  navigator.clipboard.writeText(b.dataset.c).then(()=>{const t=b.textContent;b.textContent="已复制";setTimeout(()=>b.textContent=t,1200);});
+});
+</script>
+</body>
+</html>
