@@ -216,9 +216,9 @@ var speedTestURL = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62
 
 const (
 	speedEvery     = 6 * time.Hour // 同一上游多久重新测一次吞吐
-	speedReadBytes = 2 << 20       // 每次最多读 2MB
-	speedParallel  = 4             // 吞吐测试并发上限（高了测的是总带宽而非单上游）
-	speedTopN      = 24            // 只给 TTFB 最优的前 N 个测吞吐（省流量）
+	speedSkipBytes = 1 << 20       // 先丢掉前 1MB（冷启动/回源阶段，测的是慢速）
+	speedReadBytes = 3 << 20       // 再测接下来的 3MB（稳态吞吐）
+	speedParallel  = 3             // 吞吐测试并发上限（高了测的是总带宽而非单上游）
 )
 
 var speedSem = make(chan struct{}, speedParallel)
@@ -278,12 +278,9 @@ func (s *Store) HealthOnce() {
 		c.up.markOK(c.ttfb, sp)
 	}
 
-	// 第二层：只给 TTFB 最优的前 speedTopN 个测吞吐（并发，限速）
+	// 第二层：**全部**节点测稳态吞吐（并发，限速）
 	var wg2 sync.WaitGroup
-	for i, c := range cs {
-		if i >= speedTopN {
-			break
-		}
+	for _, c := range cs {
 		c.up.mu.Lock()
 		stale := time.Since(c.up.SpeedAt) > speedEvery
 		c.up.mu.Unlock()
@@ -348,7 +345,7 @@ func probeSpeed(up *Upstream) float64 {
 	speedSem <- struct{}{}
 	defer func() { <-speedSem }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -363,16 +360,17 @@ func probeSpeed(up *Upstream) float64 {
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return 0
 	}
-	// 先读掉开头一小段（含 TTFB），再开始计时
-	first := make([]byte, 64<<10)
-	n0, _ := io.ReadFull(resp.Body, first)
+	// 跳过前 1MB 的冷启动/回源阶段，再测接下来的稳态吞吐
+	if _, err := io.CopyN(io.Discard, resp.Body, speedSkipBytes); err != nil {
+		return 0
+	}
 	start := time.Now()
 	n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, speedReadBytes))
 	el := time.Since(start).Seconds()
-	if int64(n0)+n < 512<<10 || el <= 0 {
+	if n < speedReadBytes/2 || el <= 0 {
 		return 0
 	}
-	return float64(int64(n0)+n) / 1024 / el
+	return float64(n) / 1024 / el
 }
 
 // ---------- 定时发现（占位，P2 扩展） ----------
