@@ -116,7 +116,7 @@
   <div class="card">
     <strong>API 用法</strong>
     <div class="link"><code id="api1"></code><button class="cp" data-t="api1">复制</button></div>
-    <div class="hint">程序里把 <code>https://github.com/...</code> 换成上面的地址即可，支持 Range 断点续传与 HEAD。</div>
+    <div class="hint">程序里把 <code>https://github.com/...</code> 换成上面的地址即可，会自动 302 到最快线路，支持 Range 断点续传。</div>
   </div>
 </div>
 
@@ -145,6 +145,7 @@ async function resolve(){
     const d = await r.json();
     const us = d.upstreams || [];
     let h = `<div class="link"><span class="tag">本站中转</span><code>${d.self}</code><button class="cp" data-c="${d.self}">复制</button></div>`;
+    h += '<div class="hint">该地址会 <b>302 直连</b> 到下面选中的最快线路（流量不经本机），点击即下载。</div>';
     if(us.length){
       const head = us.slice(0, TOPN), rest = us.slice(TOPN);
       h += `<div class="hint">可选线路 · 按速度排序，默认显示最快 ${head.length} 条`+(rest.length?`（共 ${us.length} 条）`:'')+`：</div>`;
