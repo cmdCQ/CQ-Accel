@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"sort"
@@ -36,8 +38,9 @@ type Upstream struct {
 	SpeedKB float64 `json:"speed_kbps"`
 	Checked string  `json:"checked,omitempty"`
 
-	fails int
-	mu    sync.Mutex
+	SpeedAt time.Time
+	fails   int
+	mu      sync.Mutex
 }
 
 var ghHosts = []string{
@@ -172,10 +175,10 @@ func (up *Upstream) markOK(ttfb int64, kbps float64) {
 	up.OK = true
 	up.TTFBms = ttfb
 	up.SpeedKB = kbps
-	// 评分：快者高分；10MB/s 封顶
-	sc := 1000.0/float64(ttfb+1)*10 + kbps/1024
-	if sc > 500 {
-		sc = 500
+	// 评分：以**实测吞吐**为主（KB/s 量级），延迟为辅；200 封顶
+	sc := kbps/100.0 + 1000.0/float64(ttfb+1)
+	if sc > 200 {
+		sc = 200
 	}
 	up.Score = sc
 	up.Checked = time.Now().Format("15:04:05")
@@ -184,8 +187,17 @@ func (up *Upstream) markOK(ttfb int64, kbps float64) {
 
 // ---------- 健康测速 ----------
 
-// 用约 280KB 的真实文件测速，太小的文件测不出吞吐
+// 小文件测 TTFB（便宜、高频）；大文件测**持续吞吐**（贵、低频）
 var testRawURL = "https://raw.githubusercontent.com/twbs/bootstrap/main/dist/css/bootstrap.css"
+var speedTestURL = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
+
+const (
+	speedEvery     = 60 * time.Minute // 同一上游多久重新测一次吞吐
+	speedReadBytes = 3 << 20          // 每次最多读 3MB
+	speedParallel  = 4                // 吞吐测试并发上限（高了测的是总带宽而非单上游）
+)
+
+var speedSem = make(chan struct{}, speedParallel)
 
 func (s *Store) HealthLoop(interval time.Duration) {
 	s.HealthOnce()
@@ -211,30 +223,75 @@ func (s *Store) HealthOnce() {
 }
 
 func probe(up *Upstream) {
-	target, ok := up.BuildURL(testRawURL)
+	ttfb, ok := probeTTFB(up)
 	if !ok {
 		up.markFail()
 		return
 	}
+	speed := up.SpeedKB
+	if time.Since(up.SpeedAt) > speedEvery {
+		if s := probeSpeed(up); s > 0 {
+			speed = s
+			up.SpeedAt = time.Now()
+		}
+	}
+	up.markOK(ttfb, speed)
+}
+
+// 小文件：测首字节延迟
+func probeTTFB(up *Upstream) (int64, bool) {
+	target, ok := up.BuildURL(testRawURL)
+	if !ok {
+		return 0, false
+	}
 	start := time.Now()
 	resp, err := probeClient.Get(target)
 	if err != nil {
-		up.markFail()
-		return
+		return 0, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		up.markFail()
-		return
+		return 0, false
 	}
 	ttfb := time.Since(start).Milliseconds()
-	n, _ := io.Copy(io.Discard, resp.Body)
-	elapsed := time.Since(start).Seconds()
-	kbps := 0.0
-	if elapsed > 0 {
-		kbps = float64(n) / 1024 / elapsed
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	return ttfb, true
+}
+
+// 大文件：测持续吞吐（限字节数 + 超时，避免拖垮上游/本地）
+func probeSpeed(up *Upstream) float64 {
+	target, ok := up.BuildURL(speedTestURL)
+	if !ok {
+		return 0
 	}
-	up.markOK(ttfb, kbps)
+	speedSem <- struct{}{}
+	defer func() { <-speedSem }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("User-Agent", "cq-accel/0.1 (+https://gh.somtfly.com)")
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		return 0
+	}
+	// 先读掉开头一小段（含 TTFB），再开始计时
+	first := make([]byte, 64<<10)
+	n0, _ := io.ReadFull(resp.Body, first)
+	start := time.Now()
+	n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, speedReadBytes))
+	el := time.Since(start).Seconds()
+	if int64(n0)+n < 512<<10 || el <= 0 {
+		return 0
+	}
+	return float64(int64(n0)+n) / 1024 / el
 }
 
 // ---------- 定时发现（占位，P2 扩展） ----------
