@@ -287,6 +287,12 @@ func (up *Upstream) setLatency(ttfb int64) {
 }
 
 // setSpeed 只更新吞吐（不动延迟）；避免用陈旧 TTFB 覆盖较新值（M2）
+func (up *Upstream) isOK() bool {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	return up.OK
+}
+
 func (up *Upstream) setSpeed(kbps float64) {
 	up.mu.Lock()
 	up.fails = 0
