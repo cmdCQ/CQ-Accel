@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -182,6 +183,20 @@ func relay(w http.ResponseWriter, r *http.Request, raw string) {
 		http.Error(w, "no available upstream", http.StatusBadGateway)
 		return
 	}
+
+	// 默认：直接 302 重定向到最优上游——流量不经过本机（也就绕开了香港隧道），又快又省带宽。
+	// 例外：git 的 POST（无法用 302 重定向，会丢方法/请求体）、HEAD（部分镜像不支持 HEAD）、以及显式 ?proxy=1。
+	isGit := r.Method == http.MethodPost || r.Method == http.MethodHead || isGitRPCPath(r.URL.Path)
+	if !isGit && r.URL.Query().Get("proxy") != "1" {
+		if upName, target, size := pickRedirect(raw, cands); target != "" {
+			traffic.Record(clientIP(r), raw, upName, size, true)
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Location", target)
+			w.WriteHeader(http.StatusFound) // 302
+			return
+		}
+	}
 	var lastErr error
 	lastStatus := 0
 	attempts := 0
@@ -306,6 +321,63 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 	}
 	n, err := io.Copy(w, resp.Body)
 	return n, err
+}
+
+// ---------- 重定向选路 ----------
+
+var redirectCheckClient = &http.Client{Timeout: 8 * time.Second}
+
+// pickRedirect 从按分数排好的候选里挑第一个“真正能服务”的上游，返回名字/直链/文件大小。
+// 用 Range 探测做轻量校验（兼容性比 HEAD 好），失败就换下一个；最多试 3 个。
+func pickRedirect(raw string, cands []*Upstream) (name, target string, size int64) {
+	tries := 0
+	for _, up := range cands {
+		if !up.isOK() {
+			continue
+		}
+		t, ok := up.BuildURL(raw)
+		if !ok {
+			continue
+		}
+		tries++
+		if sz, ok := quickCheck(t); ok {
+			return up.Name, t, sz
+		}
+		if tries >= 3 {
+			break
+		}
+	}
+	return "", "", 0
+}
+
+// quickCheck 用 Range: bytes=0-0 轻探一下，返回总大小（可能为 0）
+func quickCheck(u string) (int64, bool) {
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return 0, false
+	}
+	req.Header.Set("Range", "bytes=0-0")
+	req.Header.Set("User-Agent", "cq-accel/0.1 (+https://gh.somtfly.com)")
+	resp, err := redirectCheckClient.Do(req)
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return 0, false
+	}
+	var size int64
+	if cr := resp.Header.Get("Content-Range"); cr != "" {
+		if i := strings.LastIndexByte(cr, '/'); i >= 0 {
+			size, _ = strconv.ParseInt(strings.TrimSpace(cr[i+1:]), 10, 64)
+		}
+	}
+	if size == 0 {
+		if cl := resp.Header.Get("Content-Length"); cl != "" {
+			size, _ = strconv.ParseInt(cl, 10, 64)
+		}
+	}
+	return size, true
 }
 
 // ---------- API ----------
