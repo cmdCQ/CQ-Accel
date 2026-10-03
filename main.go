@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -150,20 +151,37 @@ func relay(w http.ResponseWriter, r *http.Request, raw string) {
 		return
 	}
 	var lastErr error
+	lastStatus := 0
+	attempts := 0
+	const maxRelayAttempts = 25
+	const relayBudget = 15 * time.Second
+	deadline := time.Now().Add(relayBudget)
 	for _, up := range cands {
+		if attempts >= maxRelayAttempts || time.Now().After(deadline) {
+			break
+		}
 		target, ok := up.BuildURL(raw)
 		if !ok {
 			continue
 		}
+		attempts++
 		if n, err := streamThrough(w, r, target, up); err == nil {
 			traffic.Record(clientIP(r), raw, up.Name, n, true)
 			return
 		} else {
 			lastErr = err
+			var se *upstreamStatusError
+			if errors.As(err, &se) {
+				lastStatus = se.code
+			}
 			log.Printf("upstream %s failed: %v", up.Name, err)
 		}
 	}
 	traffic.Record(clientIP(r), raw, "", 0, false)
+	if lastStatus != 0 {
+		http.Error(w, "upstream error: "+errStr(lastErr), lastStatus)
+		return
+	}
 	http.Error(w, "all upstreams failed: "+errStr(lastErr), http.StatusBadGateway)
 }
 
@@ -186,6 +204,15 @@ func isRenderableType(ct string) bool {
 func isGitRPCPath(p string) bool {
 	return strings.Contains(p, "/git-upload-pack") || strings.Contains(p, "/git-receive-pack")
 }
+
+// upstreamStatusError 携带上游返回的 HTTP 状态码，便于全失败时透传给客户端
+// （比如资源确实不存在 → 最终回 404）
+type upstreamStatusError struct {
+	code int
+	msg  string
+}
+
+func (e *upstreamStatusError) Error() string { return e.msg }
 
 func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Upstream) (int64, error) {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, target, nil)
@@ -214,9 +241,14 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 		return 0, err
 	}
 	defer resp.Body.Close()
+	// 403/404：多为“该上游不支持这个 URL 形态 / 资源不存在” → 不罚健康分，换下一家再试
+	// 429/5xx：上游自身过载或故障 → 罚分
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
+		return 0, &upstreamStatusError{resp.StatusCode, fmt.Sprintf("upstream status %d", resp.StatusCode)}
+	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 		up.markRelayFail()
-		return 0, fmt.Errorf("upstream status %d", resp.StatusCode)
+		return 0, &upstreamStatusError{resp.StatusCode, fmt.Sprintf("upstream status %d", resp.StatusCode)}
 	}
 	for _, h := range []string{
 		"Content-Type", "Content-Length", "Content-Range",
