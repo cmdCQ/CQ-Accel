@@ -1,0 +1,16 @@
+# 编译产物
+cq-accel
+gh-accel
+*.exe
+
+# 本地密钥 / 运行时数据
+.gh_env
+.gh_token
+discovered.json
+prune_state.json
+traffic.json
+traffic.json.tmp
+stats.json
+
+# 备份
+*.bak*
