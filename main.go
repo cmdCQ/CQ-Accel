@@ -340,7 +340,8 @@ func pickRedirect(raw string, cands []*Upstream) (name, target string, size int6
 			continue
 		}
 		tries++
-		if sz, ok := quickCheck(t); ok {
+		if sz, ttfb, ok := quickCheck(t); ok {
+			up.setLatency(ttfb) // 复用 302 前的校验，零额外请求地刷新该节点延迟
 			return up.Name, t, sz
 		}
 		if tries >= 3 {
@@ -350,22 +351,24 @@ func pickRedirect(raw string, cands []*Upstream) (name, target string, size int6
 	return "", "", 0
 }
 
-// quickCheck 用 Range: bytes=0-0 轻探一下，返回总大小（可能为 0）
-func quickCheck(u string) (int64, bool) {
+// quickCheck 用 Range: bytes=0-0 轻探一下，返回总大小（可能为 0）与首字节延迟（ms）
+func quickCheck(u string) (int64, int64, bool) {
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
 	req.Header.Set("Range", "bytes=0-0")
 	req.Header.Set("User-Agent", "cq-accel/0.1 (+https://gh.somtfly.com)")
+	start := time.Now()
 	resp, err := redirectCheckClient.Do(req)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return 0, false
+		return 0, 0, false
 	}
+	ttfb := time.Since(start).Milliseconds()
 	var size int64
 	if cr := resp.Header.Get("Content-Range"); cr != "" {
 		if i := strings.LastIndexByte(cr, '/'); i >= 0 {
@@ -377,7 +380,7 @@ func quickCheck(u string) (int64, bool) {
 			size, _ = strconv.ParseInt(cl, 10, 64)
 		}
 	}
-	return size, true
+	return size, ttfb, true
 }
 
 // ---------- API ----------

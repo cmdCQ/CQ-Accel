@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -40,9 +41,10 @@ type Upstream struct {
 	SpeedKB float64 `json:"speed_kbps"`
 	Checked string  `json:"checked,omitempty"`
 
-	SpeedAt time.Time
-	fails   int
-	mu      sync.Mutex
+	SpeedAt      time.Time
+	backoffUntil time.Time // 遇 429 等限流后的退避截止时间
+	fails        int
+	mu           sync.Mutex
 }
 
 // UpstreamView 是无锁视图：API 只读它的拷贝，避免与健康循环数据竞争
@@ -133,6 +135,36 @@ type Store struct {
 	ups        []*Upstream
 	healthPath string
 	speedBusy  atomic.Bool
+	ttfbRound  atomic.Int64 // TTFB 轮询抽样计数器
+
+	// 每日探测流量预算（避免对上游节点高频全量采样）
+	probeMu    sync.Mutex
+	probeBytes int64
+	probeDay   string
+}
+
+// 每日探测流量预算：超过后自动降频（跳过吞吐探测，仅保留极廉价的 TTFB 抽样）
+const dailyProbeBudget = 1 << 30 // 1 GiB/天
+
+func (s *Store) addProbeBytes(n int64) {
+	if n <= 0 {
+		return
+	}
+	s.probeMu.Lock()
+	s.probeBytes += n
+	s.probeMu.Unlock()
+}
+
+func (s *Store) probeBudgetExceeded() bool {
+	today := time.Now().Format("2006-01-02")
+	s.probeMu.Lock()
+	if s.probeDay != today {
+		s.probeDay = today
+		s.probeBytes = 0
+	}
+	ex := s.probeBytes >= dailyProbeBudget
+	s.probeMu.Unlock()
+	return ex
 }
 
 func LoadStore(path string) (*Store, error) {
@@ -294,6 +326,22 @@ func (up *Upstream) setLatency(ttfb int64) {
 }
 
 // setSpeed 只更新吞吐（不动延迟）；避免用陈旧 TTFB 覆盖较新值（M2）
+// inBackoff 是否处于限流退避期
+func (up *Upstream) inBackoff() bool {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	return time.Now().Before(up.backoffUntil)
+}
+
+// setBackoff 遇 429（被上游限流）时退避一段时间，别再打人家
+func (up *Upstream) setBackoff(d time.Duration) {
+	up.mu.Lock()
+	if until := time.Now().Add(d); until.After(up.backoffUntil) {
+		up.backoffUntil = until
+	}
+	up.mu.Unlock()
+}
+
 func (up *Upstream) isOK() bool {
 	up.mu.Lock()
 	defer up.mu.Unlock()
@@ -333,10 +381,13 @@ var testRawURL = "https://raw.githubusercontent.com/twbs/bootstrap/main/dist/css
 var speedTestURL = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
 const (
-	speedEvery     = 4 * time.Hour // 同一上游多久重新测一次吞吐
-	speedSkipBytes = 1 << 20       // 先丢掉前 1MB（冷启动/回源阶段，测的是慢速）
-	speedReadBytes = 3 << 20       // 再测接下来的 3MB（稳态吞吐）
-	speedParallel  = 1             // 吞吐测试串行（并发会让测到的变成“本地总带宽”而非单个上游真实上限）
+	speedEveryFast = 6 * time.Hour  // Top 上游多久重新测一次吞吐
+	speedEverySlow = 24 * time.Hour // 其余上游（没必要高频打扰）
+	speedTopN      = 8              // 排在前 N 名的上游才享受高频吞吐探测
+	speedSkipBytes = 512 << 10      // 先丢掉前 512KB（冷启动/回源阶段，测的是慢速）
+	speedReadBytes = 2 << 20        // 再测接下来的 2MB（稳态吞吐）
+	speedParallel  = 1              // 吞吐测试串行（并发会让测到的变成“本地总带宽”而非单个上游真实上限）
+	ttfbSampleN    = 4              // TTFB 轮询抽样：每轮只测 1/N 节点（15min 间隔 → 单节点约 1h 一次）
 )
 
 var speedSem = make(chan struct{}, speedParallel)
@@ -344,24 +395,34 @@ var speedSem = make(chan struct{}, speedParallel)
 func (s *Store) HealthLoop(interval time.Duration) {
 	s.HealthOnce()
 	for {
-		time.Sleep(interval)
+		// 随机抖动错峰，避免固定节拍被上游观察到
+		j := time.Duration(float64(interval) * (0.85 + 0.3*rand.Float64()))
+		time.Sleep(j)
 		s.HealthOnce()
 	}
 }
 
 func (s *Store) HealthOnce() {
 	ups := s.snapshot()
+	round := s.ttfbRound.Add(1)
 
-	// 第一层：TTFB 并发探测；**每探测完一个立即覆盖式更新那一条**，不重置整池、不等整批
+	// 第一层：TTFB 轮询抽样（每轮只测 1/ttfbSampleN 的节点），用 Range 只取 1KB。
+	// 探完一个立即覆盖式更新那一条，不重置整池、不等整批。
 	var wg sync.WaitGroup
-	for _, up := range ups {
+	for i, up := range ups {
 		if !up.Enabled {
+			continue
+		}
+		if i%ttfbSampleN != int(round)%ttfbSampleN {
+			continue
+		}
+		if up.inBackoff() {
 			continue
 		}
 		wg.Add(1)
 		go func(u *Upstream) {
 			defer wg.Done()
-			ttfb, ok := probeTTFB(u)
+			ttfb, ok := s.probeTTFB(u)
 			if !ok {
 				u.markProbeFail()
 				return
@@ -377,29 +438,52 @@ func (s *Store) HealthOnce() {
 	if s.speedBusy.CompareAndSwap(false, true) {
 		go func() {
 			defer s.speedBusy.Store(false)
-			s.speedSweep(ups)
+			s.speedSweep()
 			s.saveHealth()
 		}()
 	}
 }
 
-func (s *Store) speedSweep(ups []*Upstream) {
-	var wg sync.WaitGroup
-	for _, up := range ups {
-		if !up.Enabled {
-			continue
+// speedSweep 分层探测吞吐：Top N 每 6h，其余 24h；预算耗尽则整体跳过。
+func (s *Store) speedSweep() {
+	if s.probeBudgetExceeded() { // 预算用尽：吞吐最费流量，直接跳过
+		return
+	}
+	ups := s.snapshot()
+	sorted := make([]*Upstream, 0, len(ups))
+	for _, u := range ups {
+		if u.Enabled {
+			sorted = append(sorted, u)
 		}
+	}
+	// 按分数排序：靠前的（有机会被选中的）高频测，靠后的低频
+	sort.SliceStable(sorted, func(i, j int) bool {
+		sorted[i].mu.Lock()
+		si := sorted[i].Score
+		sorted[i].mu.Unlock()
+		sorted[j].mu.Lock()
+		sj := sorted[j].Score
+		sorted[j].mu.Unlock()
+		return si > sj
+	})
+
+	var wg sync.WaitGroup
+	for rank, up := range sorted {
 		up.mu.Lock()
 		okNow := up.OK
-		stale := time.Since(up.SpeedAt) > speedEvery
+		interval := speedEveryFast
+		if rank >= speedTopN {
+			interval = speedEverySlow
+		}
+		stale := time.Since(up.SpeedAt) > interval
 		up.mu.Unlock()
-		if !okNow || !stale {
+		if !okNow || !stale || up.inBackoff() {
 			continue
 		}
 		wg.Add(1)
 		go func(u *Upstream) {
 			defer wg.Done()
-			if sp := probeSpeed(u); sp > 0 {
+			if sp := s.probeSpeed(u); sp > 0 {
 				u.mu.Lock()
 				u.SpeedAt = time.Now()
 				u.mu.Unlock()
@@ -410,27 +494,42 @@ func (s *Store) speedSweep(ups []*Upstream) {
 	wg.Wait()
 }
 
-// 小文件：测首字节延迟
-func probeTTFB(up *Upstream) (int64, bool) {
+// 小文件：测首字节延迟。用 Range 只取 1KB，几乎不耗流量；遇 429 退避。
+func (s *Store) probeTTFB(up *Upstream) (int64, bool) {
 	target, ok := up.BuildURL(testRawURL)
 	if !ok {
 		return 0, false
 	}
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		return 0, false
+	}
+	req.Header.Set("Range", "bytes=0-1023")
+	req.Header.Set("User-Agent", "cq-accel/0.1 (+https://gh.somtfly.com)")
 	start := time.Now()
-	resp, err := probeClient.Get(target)
+	resp, err := probeClient.Do(req)
 	if err != nil {
 		return 0, false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		up.setBackoff(30 * time.Minute)
+		return 0, false
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return 0, false
 	}
 	ttfb := time.Since(start).Milliseconds()
-	return ttfb, true // 只看首字节，不读 body（几乎不耗流量）
+	n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, 1024)) // 最多读 1KB
+	s.addProbeBytes(n)
+	return ttfb, true
 }
 
-// 大文件：测持续吞吐（限字节数 + 超时，避免拖垮上游/本地）
-func probeSpeed(up *Upstream) float64 {
+// 大文件：测持续吞吐（限字节数 + 超时，避免拖垮上游/本地）；遇 429 退避。
+func (s *Store) probeSpeed(up *Upstream) float64 {
+	if s.probeBudgetExceeded() {
+		return 0
+	}
 	target, ok := up.BuildURL(speedTestURL)
 	if !ok {
 		return 0
@@ -450,15 +549,20 @@ func probeSpeed(up *Upstream) float64 {
 		return 0
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		up.setBackoff(30 * time.Minute)
+		return 0
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
 		return 0
 	}
-	// 跳过前 1MB 的冷启动/回源阶段，再测接下来的稳态吞吐
+	// 跳过前 512KB 的冷启动/回源阶段，再测接下来的 2MB 稳态吞吐
 	if _, err := io.CopyN(io.Discard, resp.Body, speedSkipBytes); err != nil {
 		return 0
 	}
 	start := time.Now()
 	n, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, speedReadBytes))
+	s.addProbeBytes(int64(speedSkipBytes) + n)
 	el := time.Since(start).Seconds()
 	if n < speedReadBytes/2 || el <= 0 {
 		return 0
