@@ -139,8 +139,7 @@ async function resolve(){
     const r = await fetch("/api/resolve?u=" + encodeURIComponent(raw));
     if(!r.ok){ $("#out").innerHTML = '<div class="bad">解析失败：'+(await r.text())+'</div>'; return; }
     const d = await r.json();
-    let h = `<div class="link"><span class="tag">本站中转</span><code>${d.self}</code><button class="cp" data-c="${d.self}">复制</button></div>`;
-    h += '<div class="hint">该地址自动 302 到最快线路（流量不经本机），点击即下载；各线路快慢见下方「上游池」。</div>';
+    let h = `<div class="link"><code>${d.self}</code><button class="cp" data-c="${d.self}">复制</button></div>`;
     $("#out").innerHTML = h;
   }catch(e){ $("#out").innerHTML = '<div class="bad">'+e+'</div>'; }
 }
