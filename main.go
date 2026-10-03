@@ -172,12 +172,12 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 	req.Header.Set("User-Agent", "cq-accel/0.1 (+https://gh.somtfly.com)")
 	resp, err := streamClient.Do(req)
 	if err != nil {
-		up.markFail()
+		up.markRelayFail()
 		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-		up.markFail()
+		up.markRelayFail()
 		return 0, fmt.Errorf("upstream status %d", resp.StatusCode)
 	}
 	for _, h := range []string{
