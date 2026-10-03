@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -121,8 +122,10 @@ func jsdelivrBuild(raw string) (string, bool) {
 // ---------- 上游池 ----------
 
 type Store struct {
-	mu  sync.RWMutex
-	ups []*Upstream
+	mu         sync.RWMutex
+	ups        []*Upstream
+	healthPath string
+	speedBusy  atomic.Bool
 }
 
 func LoadStore(path string) (*Store, error) {
@@ -139,7 +142,48 @@ func LoadStore(path string) (*Store, error) {
 			u.Region = "global"
 		}
 	}
-	return &Store{ups: ups}, nil
+	s := &Store{ups: ups, healthPath: getenv("HEALTH_FILE", "health.json")}
+	s.loadHealth() // 启动时先回填上次的健康快照，避免重启后前端一片“不可用”
+	return s, nil
+}
+
+// ---------- 健康快照持久化（覆盖式：每轮覆盖写入，启动时回填） ----------
+
+type healthSnap struct {
+	OK      bool    `json:"ok"`
+	Score   float64 `json:"score"`
+	TTFBms  int64   `json:"ttfb_ms"`
+	SpeedKB float64 `json:"speed_kbps"`
+	Checked string  `json:"checked,omitempty"`
+}
+
+func (s *Store) loadHealth() {
+	b, err := os.ReadFile(s.healthPath)
+	if err != nil {
+		return
+	}
+	var m map[string]healthSnap
+	if json.Unmarshal(b, &m) != nil {
+		return
+	}
+	for _, u := range s.ups {
+		if h, ok := m[u.ID]; ok {
+			u.OK, u.Score, u.TTFBms, u.SpeedKB, u.Checked = h.OK, h.Score, h.TTFBms, h.SpeedKB, h.Checked
+		}
+	}
+}
+
+func (s *Store) saveHealth() {
+	m := map[string]healthSnap{}
+	for _, u := range s.snapshot() {
+		u.mu.Lock()
+		m[u.ID] = healthSnap{u.OK, u.Score, u.TTFBms, u.SpeedKB, u.Checked}
+		u.mu.Unlock()
+	}
+	if b, err := json.Marshal(m); err == nil {
+		_ = os.WriteFile(s.healthPath+".tmp", b, 0o644)
+		_ = os.Rename(s.healthPath+".tmp", s.healthPath)
+	}
 }
 
 func (s *Store) snapshot() []*Upstream {
@@ -177,6 +221,17 @@ func (up *Upstream) markFail() {
 	up.fails++
 	up.Score = -1
 	up.OK = false
+	up.mu.Unlock()
+}
+
+// markProbeFail 健康探测失败：先降权；连续 2 次才标不可用（避免扫描瞬间闪成不可用）
+func (up *Upstream) markProbeFail() {
+	up.mu.Lock()
+	up.fails++
+	if up.fails >= 2 {
+		up.OK = false
+		up.Score = -1
+	}
 	up.mu.Unlock()
 }
 
@@ -218,7 +273,7 @@ const (
 	speedEvery     = 6 * time.Hour // 同一上游多久重新测一次吞吐
 	speedSkipBytes = 1 << 20       // 先丢掉前 1MB（冷启动/回源阶段，测的是慢速）
 	speedReadBytes = 3 << 20       // 再测接下来的 3MB（稳态吞吐）
-	speedParallel  = 3             // 吞吐测试并发上限（高了测的是总带宽而非单上游）
+	speedParallel  = 6             // 吞吐测试并发上限（高了测的是总带宽而非单上游）
 )
 
 var speedSem = make(chan struct{}, speedParallel)
@@ -234,7 +289,7 @@ func (s *Store) HealthLoop(interval time.Duration) {
 func (s *Store) HealthOnce() {
 	ups := s.snapshot()
 
-	// 第一层：所有启用上游并发测 TTFB（只看首字节，几乎不耗流量）
+	// 第一层：TTFB 并发探测；**每探测完一个立即覆盖式更新那一条**，不重置整池、不等整批
 	var wg sync.WaitGroup
 	for _, up := range ups {
 		if !up.Enabled {
@@ -245,60 +300,55 @@ func (s *Store) HealthOnce() {
 			defer wg.Done()
 			ttfb, ok := probeTTFB(u)
 			if !ok {
-				u.markFail()
+				u.markProbeFail()
 				return
 			}
 			u.mu.Lock()
-			u.ttfbTmp = ttfb
+			sp := u.SpeedKB
 			u.mu.Unlock()
+			u.markOK(ttfb, sp) // 覆盖式立即更新
 		}(up)
 	}
 	wg.Wait()
 
-	// 选出 TTFB 最优的候选
-	type cand struct {
-		up   *Upstream
-		ttfb int64
+	s.saveHealth() // TTFB 阶段完就落盘（不等慢吞吞的吞吐测试）
+
+	// 第二层：吞吐测试放到后台异步跑，不阻塞健康循环，也不再重叠
+	if s.speedBusy.CompareAndSwap(false, true) {
+		go func() {
+			defer s.speedBusy.Store(false)
+			s.speedSweep(ups)
+			s.saveHealth()
+		}()
 	}
-	var cs []cand
+}
+
+func (s *Store) speedSweep(ups []*Upstream) {
+	var wg sync.WaitGroup
 	for _, up := range ups {
-		up.mu.Lock()
-		if up.ttfbTmp > 0 {
-			cs = append(cs, cand{up, up.ttfbTmp})
-		}
-		up.mu.Unlock()
-	}
-	sort.Slice(cs, func(i, j int) bool { return cs[i].ttfb < cs[j].ttfb })
-
-	// 先立即用已有吞吐标记 OK，避免被后面的测速阻塞
-	for _, c := range cs {
-		c.up.mu.Lock()
-		sp := c.up.SpeedKB
-		c.up.mu.Unlock()
-		c.up.markOK(c.ttfb, sp)
-	}
-
-	// 第二层：**全部**节点测稳态吞吐（并发，限速）
-	var wg2 sync.WaitGroup
-	for _, c := range cs {
-		c.up.mu.Lock()
-		stale := time.Since(c.up.SpeedAt) > speedEvery
-		c.up.mu.Unlock()
-		if !stale {
+		if !up.Enabled {
 			continue
 		}
-		wg2.Add(1)
-		go func(u *Upstream, ttfb int64) {
-			defer wg2.Done()
+		up.mu.Lock()
+		okNow := up.OK
+		stale := time.Since(up.SpeedAt) > speedEvery
+		ttfb := up.TTFBms
+		up.mu.Unlock()
+		if !okNow || !stale {
+			continue
+		}
+		wg.Add(1)
+		go func(u *Upstream, t int64) {
+			defer wg.Done()
 			if sp := probeSpeed(u); sp > 0 {
 				u.mu.Lock()
 				u.SpeedAt = time.Now()
 				u.mu.Unlock()
-				u.markOK(ttfb, sp)
+				u.markOK(t, sp)
 			}
-		}(c.up, c.ttfb)
+		}(up, ttfb)
 	}
-	wg2.Wait()
+	wg.Wait()
 }
 
 func probe(up *Upstream) {
