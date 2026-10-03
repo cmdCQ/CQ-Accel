@@ -23,6 +23,9 @@ var indexHTML string
 //go:embed static/docs.html
 var docsHTML string
 
+//go:embed static/favicon.ico
+var faviconICO []byte
+
 var (
 	store        *Store
 	traffic      *Traffic
@@ -91,6 +94,12 @@ func main() {
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, "/")
+	if p == "favicon.ico" {
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "public, max-age=604800")
+		_, _ = w.Write(faviconICO)
+		return
+	}
 	if p == "docs" || p == "docs/" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, docsHTML)
@@ -111,7 +120,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 
 func resolveRaw(r *http.Request) (string, bool) {
 	if u := r.URL.Query().Get("u"); u != "" {
-		return u, true
+		return normalizeGH(u), true
 	}
 	p := strings.TrimPrefix(r.URL.Path, "/")
 	if p == "fetch" {
@@ -123,12 +132,35 @@ func resolveRaw(r *http.Request) (string, bool) {
 		if r.URL.RawQuery != "" {
 			u += "?" + r.URL.RawQuery
 		}
-		return u, true
+		return normalizeGH(u), true
 	}
 	return "", false
 }
 
+// normalizeGH 把 github.com/<owner>/<repo>/blob/... 重写为 /raw/...，
+// 保证“分支文件”一定拿到原文（而不是依赖上游自己转换）
+func normalizeGH(u string) string {
+	pu, err := url.Parse(u)
+	if err != nil || pu.Hostname() != "github.com" {
+		return u
+	}
+	if strings.Contains(pu.Path, "/blob/") {
+		pu.Path = strings.Replace(pu.Path, "/blob/", "/raw/", 1)
+		return pu.String()
+	}
+	return u
+}
+
 func relay(w http.ResponseWriter, r *http.Request, raw string) {
+	// CORS 预检：让浏览器/XHR 跨域直接调用中转地址
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,HEAD,POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Max-Age", "1728000")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	case http.MethodPost:
@@ -241,13 +273,12 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 		return 0, err
 	}
 	defer resp.Body.Close()
-	// 403/404：多为“该上游不支持这个 URL 形态 / 资源不存在” → 不罚健康分，换下一家再试
-	// 429/5xx：上游自身过载或故障 → 罚分
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
-		return 0, &upstreamStatusError{resp.StatusCode, fmt.Sprintf("upstream status %d", resp.StatusCode)}
-	}
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-		up.markRelayFail()
+	// 4xx 多为“该上游不支持这个形态/方法”（403/404/405…）→ 换下一家再试，不罚健康分
+	// 429/5xx 为上游过载或自身故障 → 罚分
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			up.markRelayFail()
+		}
 		return 0, &upstreamStatusError{resp.StatusCode, fmt.Sprintf("upstream status %d", resp.StatusCode)}
 	}
 	for _, h := range []string{
@@ -260,6 +291,7 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 	}
 	w.Header().Set("X-Upstream", up.Name)
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "*")
 	// H2-安全：剔除上游可内联/执行的内容类型，强制当附件下载，防止 gh 域内联 XSS
 	if isRenderableType(w.Header().Get("Content-Type")) {
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -317,6 +349,7 @@ func handleUpstreams(w http.ResponseWriter, r *http.Request) {
 
 func handleResolve(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("u")
+	raw = normalizeGH(raw)
 	if !isGHURL(raw) {
 		http.Error(w, "invalid github url", http.StatusBadRequest)
 		return
@@ -336,6 +369,7 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 
 func handleBest(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("u")
+	raw = normalizeGH(raw)
 	if !isGHURL(raw) {
 		http.Error(w, "invalid github url", http.StatusBadRequest)
 		return
