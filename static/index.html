@@ -132,7 +132,7 @@ async function loadUps(){
     $("#ut").textContent = `可用 ${okN} / ${d.count} 条`;
     $("#ups").innerHTML = d.upstreams.map(u=>{
       const st = u.ok ? '<span class="ok">● 可用</span>' : '<span class="bad">● 不可用</span>';
-      return `<tr><td class="name">${u.name}</td><td class="c-kind">${u.kind}</td><td class="c-region">${u.region}</td><td>${st}</td><td>${u.ttfb_ms||'-'} ms</td><td>${(u.speed_kbps||0).toFixed(0)} KB/s</td></tr>`;
+      return `<tr><td class="name">${u.name}</td><td class="c-kind">${u.kind}</td><td class="c-region">${u.region}</td><td>${st}</td><td>${u.ttfb_ms||'-'} ms</td><td>${fmtSpd(u.speed_kbps)}</td></tr>`;
     }).join("");
   }catch(e){}
 }
@@ -147,6 +147,7 @@ $("#u").addEventListener("keydown", e=>{ if(e.key==="Enter") resolve(); });
 loadUps(); setInterval(loadUps, 20000);
 
 function fmtB(n){ if(!n)return '0 B'; const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<4){n/=1024;i++;} return n.toFixed(i?1:0)+' '+u[i]; }
+function fmtSpd(kb){ if(!kb)return '-'; if(kb>=1024) return (kb/1024).toFixed(1)+' MB/s'; return kb.toFixed(0)+' KB/s'; }
 async function loadTraffic(){
   try{
     const d=await (await fetch("/api/traffic")).json();
