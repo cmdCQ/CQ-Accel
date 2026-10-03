@@ -39,6 +39,7 @@ type Upstream struct {
 	Checked string  `json:"checked,omitempty"`
 
 	SpeedAt time.Time
+	ttfbTmp int64
 	fails   int
 	mu      sync.Mutex
 }
@@ -192,9 +193,10 @@ var testRawURL = "https://raw.githubusercontent.com/twbs/bootstrap/main/dist/css
 var speedTestURL = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
 const (
-	speedEvery     = 60 * time.Minute // 同一上游多久重新测一次吞吐
-	speedReadBytes = 3 << 20          // 每次最多读 3MB
-	speedParallel  = 4                // 吞吐测试并发上限（高了测的是总带宽而非单上游）
+	speedEvery     = 6 * time.Hour // 同一上游多久重新测一次吞吐
+	speedReadBytes = 2 << 20       // 每次最多读 2MB
+	speedParallel  = 4             // 吞吐测试并发上限（高了测的是总带宽而非单上游）
+	speedTopN      = 24            // 只给 TTFB 最优的前 N 个测吞吐（省流量）
 )
 
 var speedSem = make(chan struct{}, speedParallel)
@@ -208,18 +210,76 @@ func (s *Store) HealthLoop(interval time.Duration) {
 }
 
 func (s *Store) HealthOnce() {
+	ups := s.snapshot()
+
+	// 第一层：所有启用上游并发测 TTFB（只看首字节，几乎不耗流量）
 	var wg sync.WaitGroup
-	for _, up := range s.snapshot() {
+	for _, up := range ups {
 		if !up.Enabled {
 			continue
 		}
 		wg.Add(1)
 		go func(u *Upstream) {
 			defer wg.Done()
-			probe(u)
+			ttfb, ok := probeTTFB(u)
+			if !ok {
+				u.markFail()
+				return
+			}
+			u.mu.Lock()
+			u.ttfbTmp = ttfb
+			u.mu.Unlock()
 		}(up)
 	}
 	wg.Wait()
+
+	// 选出 TTFB 最优的候选
+	type cand struct {
+		up   *Upstream
+		ttfb int64
+	}
+	var cs []cand
+	for _, up := range ups {
+		up.mu.Lock()
+		if up.ttfbTmp > 0 {
+			cs = append(cs, cand{up, up.ttfbTmp})
+		}
+		up.mu.Unlock()
+	}
+	sort.Slice(cs, func(i, j int) bool { return cs[i].ttfb < cs[j].ttfb })
+
+	// 先立即用已有吞吐标记 OK，避免被后面的测速阻塞
+	for _, c := range cs {
+		c.up.mu.Lock()
+		sp := c.up.SpeedKB
+		c.up.mu.Unlock()
+		c.up.markOK(c.ttfb, sp)
+	}
+
+	// 第二层：只给 TTFB 最优的前 speedTopN 个测吞吐（并发，限速）
+	var wg2 sync.WaitGroup
+	for i, c := range cs {
+		if i >= speedTopN {
+			break
+		}
+		c.up.mu.Lock()
+		stale := time.Since(c.up.SpeedAt) > speedEvery
+		c.up.mu.Unlock()
+		if !stale {
+			continue
+		}
+		wg2.Add(1)
+		go func(u *Upstream, ttfb int64) {
+			defer wg2.Done()
+			if sp := probeSpeed(u); sp > 0 {
+				u.mu.Lock()
+				u.SpeedAt = time.Now()
+				u.mu.Unlock()
+				u.markOK(ttfb, sp)
+			}
+		}(c.up, c.ttfb)
+	}
+	wg2.Wait()
 }
 
 func probe(up *Upstream) {
@@ -254,8 +314,7 @@ func probeTTFB(up *Upstream) (int64, bool) {
 		return 0, false
 	}
 	ttfb := time.Since(start).Milliseconds()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	return ttfb, true
+	return ttfb, true // 只看首字节，不读 body（几乎不耗流量）
 }
 
 // 大文件：测持续吞吐（限字节数 + 超时，避免拖垮上游/本地）
