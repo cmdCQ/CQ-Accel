@@ -36,6 +36,8 @@
   .stats .stat{flex:1 1 0;min-width:0}
   .ok{color:var(--acc)}.bad{color:#f85149}
   .hint{color:var(--dim);font-size:13px;margin-top:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chips .tag{font-size:12px;padding:3px 10px}
   a{color:var(--acc2)}
   @media(max-width:560px){
     .wrap{padding:24px 14px}
@@ -67,6 +69,21 @@
     </div>
     <div class="out" id="out"></div>
     <div class="hint">也支持 raw.githubusercontent.com / codeload.github.com / gist 链接。</div>
+  </div>
+
+  <div class="card">
+    <strong>支持加速的内容</strong>
+    <div class="chips">
+      <span class="tag">Release 附件</span>
+      <span class="tag">源码包 archive</span>
+      <span class="tag">raw 文件</span>
+      <span class="tag">gist</span>
+      <span class="tag cn">git clone / fetch</span>
+      <span class="tag cn">ls-remote</span>
+      <span class="tag">头像 / 静态资源</span>
+      <span class="tag">codeload</span>
+    </div>
+    <div class="hint" style="margin-top:10px">codeload / 头像等视上游而定；<code>api.github.com</code> 不提供（防滥用）。</div>
   </div>
 
   <div class="card">
