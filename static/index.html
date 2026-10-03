@@ -38,6 +38,8 @@
   .hint{color:var(--dim);font-size:13px;margin-top:10px}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
   .chips .tag{font-size:12px;padding:3px 10px}
+  .toggle{margin-top:10px;background:#21262d;color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+  .toggle:hover{border-color:var(--acc2)}
   a{color:var(--acc2)}
   @media(max-width:560px){
     .wrap{padding:24px 14px}
@@ -129,6 +131,10 @@ if (matchMedia("(max-width:560px)").matches) {
 function apiURL(raw){ return base + "/" + raw.replace(/^https?:\/\//,""); }
 $("#api1").textContent = `curl -L -O "${base}/github.com/owner/repo/releases/download/v1.0/x.zip"`;
 
+const TOPN = 5; // 可选线路默认只显示最快的 N 条，其余折叠
+function lineHtml(u){
+  return `<div class="link"><span class="tag ${u.region==='cn'?'cn':''}">${u.region}</span><code>${u.url}</code><button class="cp" data-c="${u.url}">复制</button><span class="tag">${u.name}</span></div>`;
+}
 async function resolve(){
   const raw = $("#u").value.trim();
   if(!raw){ return; }
@@ -137,13 +143,24 @@ async function resolve(){
     const r = await fetch("/api/resolve?u=" + encodeURIComponent(raw));
     if(!r.ok){ $("#out").innerHTML = '<div class="bad">解析失败：'+(await r.text())+'</div>'; return; }
     const d = await r.json();
+    const us = d.upstreams || [];
     let h = `<div class="link"><span class="tag">本站中转</span><code>${d.self}</code><button class="cp" data-c="${d.self}">复制</button></div>`;
-    h += '<div class="hint">可选线路（点击复制上游直链）：</div>';
-    for(const u of d.upstreams){
-      h += `<div class="link"><span class="tag ${u.region==='cn'?'cn':''}">${u.region}</span><code>${u.url}</code><button class="cp" data-c="${u.url}">复制</button><span class="tag">${u.name}</span></div>`;
-    }
-    if(!d.upstreams.length) h += '<div class="bad">暂无可用上游</div>';
+    if(us.length){
+      const head = us.slice(0, TOPN), rest = us.slice(TOPN);
+      h += `<div class="hint">可选线路 · 按速度排序，默认显示最快 ${head.length} 条`+(rest.length?`（共 ${us.length} 条）`:'')+`：</div>`;
+      h += head.map(lineHtml).join("");
+      if(rest.length){
+        h += `<div id="more" style="display:none">`+rest.map(lineHtml).join("")+`</div>`;
+        h += `<button class="toggle" id="morebtn">展开全部 ${us.length} 条</button>`;
+      }
+    } else h += '<div class="bad">暂无可用上游</div>';
     $("#out").innerHTML = h;
+    const mb = $("#morebtn");
+    if(mb) mb.addEventListener("click", ()=>{
+      const m = $("#more"), open = m.style.display !== 'none';
+      m.style.display = open ? 'none' : '';
+      mb.textContent = open ? `展开全部 ${us.length} 条` : '收起';
+    });
   }catch(e){ $("#out").innerHTML = '<div class="bad">'+e+'</div>'; }
 }
 
