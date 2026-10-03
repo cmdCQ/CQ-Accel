@@ -152,13 +152,23 @@ func (s *Store) snapshot() []*Upstream {
 
 // Candidates 返回能处理 raw 的上游，按分数从高到低
 func (s *Store) Candidates(raw string) []*Upstream {
-	var out []*Upstream
+	type sc struct {
+		u *Upstream
+		s float64
+	}
+	var arr []sc
 	for _, u := range s.snapshot() {
 		if u.Enabled && u.CanHandle(raw) {
-			out = append(out, u)
+			u.mu.Lock()
+			arr = append(arr, sc{u, u.Score})
+			u.mu.Unlock()
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	sort.SliceStable(arr, func(i, j int) bool { return arr[i].s > arr[j].s })
+	out := make([]*Upstream, len(arr))
+	for i, x := range arr {
+		out[i] = x.u
+	}
 	return out
 }
 
@@ -167,6 +177,18 @@ func (up *Upstream) markFail() {
 	up.fails++
 	up.Score = -1
 	up.OK = false
+	up.mu.Unlock()
+}
+
+// markRelayFail 用户请求中转失败：温和降权（不立即拉黑），连续多次才标不可用。
+// 避免“一次性抖动”把好节点拉到下一轮健康检查前都不能用（性能优先）。
+func (up *Upstream) markRelayFail() {
+	up.mu.Lock()
+	up.fails++
+	up.Score *= 0.5
+	if up.fails >= 3 {
+		up.OK = false
+	}
 	up.mu.Unlock()
 }
 
