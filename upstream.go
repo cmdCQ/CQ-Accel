@@ -1,0 +1,250 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ---------- 上游模型 ----------
+
+// 支持的加速站形态：
+//
+//	prefix   : {base}/{原始URL}           例 https://ghproxy.com/https://github.com/...
+//	param    : {base}/?url={urlencode}    例 https://x.com/?url=https%3A%2F%2Fgithub.com%2F...
+//	replace  : 把 github 主机名替换为 domain，路径不变
+//	jsdelivr : raw / repos/raw 走 cdn.jsdelivr.net
+type Upstream struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Base    string `json:"base,omitempty"`
+	Domain  string `json:"domain,omitempty"`
+	Region  string `json:"region,omitempty"`
+	Enabled bool   `json:"enabled"`
+
+	// 运行时指标（不写回配置文件）
+	OK      bool    `json:"ok"`
+	Score   float64 `json:"score"`
+	TTFBms  int64   `json:"ttfb_ms"`
+	SpeedKB float64 `json:"speed_kbps"`
+	Checked string  `json:"checked,omitempty"`
+
+	fails int
+	mu    sync.Mutex
+}
+
+var ghHosts = []string{
+	"github.com",
+	"raw.githubusercontent.com",
+	"codeload.github.com",
+	"gist.githubusercontent.com",
+	"gist.github.com",
+	"objects.githubusercontent.com",
+	"release-assets.githubusercontent.com",
+}
+
+func isGHHost(h string) bool {
+	h = strings.ToLower(h)
+	for _, x := range ghHosts {
+		if x == h {
+			return true
+		}
+	}
+	return false
+}
+
+// 校验：只允许公网 http(s) 的 GitHub 域
+func isGHURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	return isGHHost(u.Hostname())
+}
+
+func (up *Upstream) CanHandle(raw string) bool {
+	if up.Kind == "jsdelivr" {
+		_, ok := jsdelivrBuild(raw)
+		return ok
+	}
+	return isGHURL(raw)
+}
+
+func (up *Upstream) BuildURL(raw string) (string, bool) {
+	switch up.Kind {
+	case "prefix":
+		return strings.TrimRight(up.Base, "/") + "/" + raw, true
+	case "param":
+		return strings.TrimRight(up.Base, "/") + "/?url=" + url.QueryEscape(raw), true
+	case "replace":
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", false
+		}
+		u.Host = up.Domain
+		return u.String(), true
+	case "jsdelivr":
+		return jsdelivrBuild(raw)
+	}
+	return "", false
+}
+
+// raw.githubusercontent.com/user/repo/branch/path  ->  cdn.jsdelivr.net/gh/user/repo@branch/path
+// github.com/user/repo/raw/branch/path             ->  同上
+func jsdelivrBuild(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	h := strings.ToLower(u.Hostname())
+	segs := strings.Split(strings.Trim(u.Path, "/"), "/")
+	switch {
+	case h == "raw.githubusercontent.com" && len(segs) >= 3:
+		return "https://cdn.jsdelivr.net/gh/" + segs[0] + "/" + segs[1] + "@" + segs[2] + "/" + strings.Join(segs[3:], "/"), true
+	case h == "github.com" && len(segs) >= 5 && segs[2] == "raw":
+		return "https://cdn.jsdelivr.net/gh/" + segs[0] + "/" + segs[1] + "@" + segs[3] + "/" + strings.Join(segs[4:], "/"), true
+	}
+	return "", false
+}
+
+// ---------- 上游池 ----------
+
+type Store struct {
+	mu  sync.RWMutex
+	ups []*Upstream
+}
+
+func LoadStore(path string) (*Store, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var ups []*Upstream
+	if err := json.Unmarshal(b, &ups); err != nil {
+		return nil, err
+	}
+	for _, u := range ups {
+		if u.Region == "" {
+			u.Region = "global"
+		}
+	}
+	return &Store{ups: ups}, nil
+}
+
+func (s *Store) snapshot() []*Upstream {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Upstream, len(s.ups))
+	copy(out, s.ups)
+	return out
+}
+
+// Candidates 返回能处理 raw 的上游，按分数从高到低
+func (s *Store) Candidates(raw string) []*Upstream {
+	var out []*Upstream
+	for _, u := range s.snapshot() {
+		if u.Enabled && u.CanHandle(raw) {
+			out = append(out, u)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	return out
+}
+
+func (up *Upstream) markFail() {
+	up.mu.Lock()
+	up.fails++
+	up.Score = -1
+	up.OK = false
+	up.mu.Unlock()
+}
+
+func (up *Upstream) markOK(ttfb int64, kbps float64) {
+	up.mu.Lock()
+	up.fails = 0
+	up.OK = true
+	up.TTFBms = ttfb
+	up.SpeedKB = kbps
+	// 评分：快者高分；10MB/s 封顶
+	sc := 1000.0/float64(ttfb+1)*10 + kbps/1024
+	if sc > 500 {
+		sc = 500
+	}
+	up.Score = sc
+	up.Checked = time.Now().Format("15:04:05")
+	up.mu.Unlock()
+}
+
+// ---------- 健康测速 ----------
+
+// 用约 280KB 的真实文件测速，太小的文件测不出吞吐
+var testRawURL = "https://raw.githubusercontent.com/twbs/bootstrap/main/dist/css/bootstrap.css"
+
+func (s *Store) HealthLoop(interval time.Duration) {
+	s.HealthOnce()
+	for {
+		time.Sleep(interval)
+		s.HealthOnce()
+	}
+}
+
+func (s *Store) HealthOnce() {
+	var wg sync.WaitGroup
+	for _, up := range s.snapshot() {
+		if !up.Enabled {
+			continue
+		}
+		wg.Add(1)
+		go func(u *Upstream) {
+			defer wg.Done()
+			probe(u)
+		}(up)
+	}
+	wg.Wait()
+}
+
+func probe(up *Upstream) {
+	target, ok := up.BuildURL(testRawURL)
+	if !ok {
+		up.markFail()
+		return
+	}
+	start := time.Now()
+	resp, err := probeClient.Get(target)
+	if err != nil {
+		up.markFail()
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+		up.markFail()
+		return
+	}
+	ttfb := time.Since(start).Milliseconds()
+	n, _ := io.Copy(io.Discard, resp.Body)
+	elapsed := time.Since(start).Seconds()
+	kbps := 0.0
+	if elapsed > 0 {
+		kbps = float64(n) / 1024 / elapsed
+	}
+	up.markOK(ttfb, kbps)
+}
+
+// ---------- 定时发现（占位，P2 扩展） ----------
+
+// DiscoverOnce 从 GitHub Code Search 抓含加速关键词的仓库，正则抽域名 -> 待测池。
+// P0 先留桩，人工种子为主。
+func (s *Store) DiscoverLoop(interval time.Duration) {
+	_ = fmt.Sprint // keep import
+	for {
+		time.Sleep(interval)
+		// TODO(P2): code search + 页面抓取 + 去重入池
+	}
+}
