@@ -40,9 +40,15 @@ type Upstream struct {
 	Checked string  `json:"checked,omitempty"`
 
 	SpeedAt time.Time
-	ttfbTmp int64
 	fails   int
 	mu      sync.Mutex
+}
+
+// UpstreamView 是无锁视图：API 只读它的拷贝，避免与健康循环数据竞争
+func (up *Upstream) metrics() (ok bool, score float64, ttfb int64, speed float64, checked string) {
+	up.mu.Lock()
+	defer up.mu.Unlock()
+	return up.OK, up.Score, up.TTFBms, up.SpeedKB, up.Checked
 }
 
 var ghHosts = []string{
@@ -194,6 +200,31 @@ func (s *Store) snapshot() []*Upstream {
 	return out
 }
 
+// UpstreamView 对外只读快照（在锁内拷贝，供 JSON 序列化）
+type UpstreamView struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Kind    string  `json:"kind"`
+	Region  string  `json:"region,omitempty"`
+	Enabled bool    `json:"enabled"`
+	OK      bool    `json:"ok"`
+	Score   float64 `json:"score"`
+	TTFBms  int64   `json:"ttfb_ms"`
+	SpeedKB float64 `json:"speed_kbps"`
+	Checked string  `json:"checked,omitempty"`
+}
+
+// View 返回全部上游的只读快照（消除 API 无锁读的竞态）
+func (s *Store) View() []UpstreamView {
+	ups := s.snapshot()
+	out := make([]UpstreamView, 0, len(ups))
+	for _, u := range ups {
+		ok, sc, ttfb, sp, ck := u.metrics()
+		out = append(out, UpstreamView{u.ID, u.Name, u.Kind, u.Region, u.Enabled, ok, sc, ttfb, sp, ck})
+	}
+	return out
+}
+
 // Candidates 返回能处理 raw 的上游，按分数从高到低
 func (s *Store) Candidates(raw string) []*Upstream {
 	type sc struct {
@@ -214,14 +245,6 @@ func (s *Store) Candidates(raw string) []*Upstream {
 		out[i] = x.u
 	}
 	return out
-}
-
-func (up *Upstream) markFail() {
-	up.mu.Lock()
-	up.fails++
-	up.Score = -1
-	up.OK = false
-	up.mu.Unlock()
 }
 
 // markProbeFail 健康探测失败：先降权；连续 2 次才标不可用（避免扫描瞬间闪成不可用）
@@ -247,20 +270,35 @@ func (up *Upstream) markRelayFail() {
 	up.mu.Unlock()
 }
 
-func (up *Upstream) markOK(ttfb int64, kbps float64) {
+// setLatency 只更新延迟（不动吞吐）；score 用当前 SpeedKB 重算
+func (up *Upstream) setLatency(ttfb int64) {
 	up.mu.Lock()
 	up.fails = 0
 	up.OK = true
 	up.TTFBms = ttfb
+	up.Score = calcScore(up.SpeedKB, up.TTFBms)
+	up.Checked = time.Now().Format("15:04:05")
+	up.mu.Unlock()
+}
+
+// setSpeed 只更新吞吐（不动延迟）；避免用陈旧 TTFB 覆盖较新值（M2）
+func (up *Upstream) setSpeed(kbps float64) {
+	up.mu.Lock()
+	up.fails = 0
+	up.OK = true
 	up.SpeedKB = kbps
-	// 评分：以**实测吞吐**为主（KB/s 量级），延迟为辅；200 封顶
+	up.Score = calcScore(up.SpeedKB, up.TTFBms)
+	up.Checked = time.Now().Format("15:04:05")
+	up.mu.Unlock()
+}
+
+// calcScore：以实测吞吐为主（KB/s 量级），延迟为辅；200 封顶
+func calcScore(kbps float64, ttfb int64) float64 {
 	sc := kbps/100.0 + 1000.0/float64(ttfb+1)
 	if sc > 200 {
 		sc = 200
 	}
-	up.Score = sc
-	up.Checked = time.Now().Format("15:04:05")
-	up.mu.Unlock()
+	return sc
 }
 
 // ---------- 健康测速 ----------
@@ -303,10 +341,7 @@ func (s *Store) HealthOnce() {
 				u.markProbeFail()
 				return
 			}
-			u.mu.Lock()
-			sp := u.SpeedKB
-			u.mu.Unlock()
-			u.markOK(ttfb, sp) // 覆盖式立即更新
+			u.setLatency(ttfb) // 只更新延迟，不用旧吞吐覆盖
 		}(up)
 	}
 	wg.Wait()
@@ -332,39 +367,22 @@ func (s *Store) speedSweep(ups []*Upstream) {
 		up.mu.Lock()
 		okNow := up.OK
 		stale := time.Since(up.SpeedAt) > speedEvery
-		ttfb := up.TTFBms
 		up.mu.Unlock()
 		if !okNow || !stale {
 			continue
 		}
 		wg.Add(1)
-		go func(u *Upstream, t int64) {
+		go func(u *Upstream) {
 			defer wg.Done()
 			if sp := probeSpeed(u); sp > 0 {
 				u.mu.Lock()
 				u.SpeedAt = time.Now()
 				u.mu.Unlock()
-				u.markOK(t, sp)
+				u.setSpeed(sp) // 只更新吞吐，不动延迟（M2）
 			}
-		}(up, ttfb)
+		}(up)
 	}
 	wg.Wait()
-}
-
-func probe(up *Upstream) {
-	ttfb, ok := probeTTFB(up)
-	if !ok {
-		up.markFail()
-		return
-	}
-	speed := up.SpeedKB
-	if time.Since(up.SpeedAt) > speedEvery {
-		if s := probeSpeed(up); s > 0 {
-			speed = s
-			up.SpeedAt = time.Now()
-		}
-	}
-	up.markOK(ttfb, speed)
 }
 
 // 小文件：测首字节延迟
