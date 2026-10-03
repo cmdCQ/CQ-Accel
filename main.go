@@ -224,7 +224,7 @@ func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Up
 // ---------- API ----------
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
-	ups := store.snapshot()
+	ups := store.View()
 	var ok, sumTTFB int
 	var sumSpeed float64
 	kinds := map[string]int{}
@@ -256,7 +256,8 @@ func handleTraffic(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleUpstreams(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"count": len(store.ups), "upstreams": store.snapshot()})
+	v := store.View()
+	writeJSON(w, map[string]any{"count": len(v), "upstreams": v})
 }
 
 func handleResolve(w http.ResponseWriter, r *http.Request) {
@@ -268,9 +269,10 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 	var out []map[string]any
 	for _, up := range store.Candidates(raw) {
 		t, _ := up.BuildURL(raw)
+		_, sc, ttfb, sp, _ := up.metrics()
 		out = append(out, map[string]any{
 			"name": up.Name, "region": up.Region,
-			"score": up.Score, "ttfb_ms": up.TTFBms, "speed_kbps": up.SpeedKB,
+			"score": sc, "ttfb_ms": ttfb, "speed_kbps": sp,
 			"url": t,
 		})
 	}
@@ -289,9 +291,10 @@ func handleBest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, _ := cands[0].BuildURL(raw)
+	_, sc, _, _, _ := cands[0].metrics()
 	writeJSON(w, map[string]any{
 		"raw": raw, "self": selfURL(r, raw),
-		"best": cands[0].Name, "upstream_url": t, "score": cands[0].Score,
+		"best": cands[0].Name, "upstream_url": t, "score": sc,
 	})
 }
 
