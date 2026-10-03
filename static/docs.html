@@ -33,18 +33,21 @@
 <body>
 <div class="wrap">
   <h1>CQ-Accel <span class="tag">API 文档</span></h1>
-  <div class="sub">贴上 GitHub 链接，自动选最快的加速上游中转下载。公开 · 不限速 · 定时更新节点。 <a href="/">← 返回首页</a></div>
+  <div class="sub">贴上 GitHub 链接，自动选最快的加速上游。公开 · 不限速 · 定时更新节点。 <a href="/">← 返回首页</a></div>
 
   <h2>1. 直接用（路径即原 GitHub 路径）</h2>
   <div class="card">
-    <p>把 <code>https://github.com/...</code> 里的 <code>github.com</code> 换成站点域名即可，支持 <b>Range 断点续传</b> 与 <b>HEAD</b>：</p>
-    <pre><code># 下载 release 资源
+    <p>把 <code>https://github.com/...</code> 里的 <code>github.com</code> 换成站点域名即可。服务会实时选最优上游并返回 <b>302 重定向</b>，<b>流量直连镜像站</b>（不经过本机），支持 <b>Range 断点续传</b>：</p>
+    <pre><code># 下载 release 资源（curl 加 -L 跟随重定向）
 curl -L -O "https://gh.somtfly.com/github.com/owner/repo/releases/download/v1.0/x.zip"
 
 # raw / archive / codeload / gist 同理
 curl -L -O "https://gh.somtfly.com/raw.githubusercontent.com/owner/repo/main/file.txt"
 
-# git clone
+# 强制走本机中转（不重定向，便于排查）：加 ?proxy=1
+curl -L -O "https://gh.somtfly.com/github.com/owner/repo/releases/download/v1.0/x.zip?proxy=1"
+
+# git clone（POST 无法重定向，自动走中转）
 git clone https://gh.somtfly.com/github.com/owner/repo.git</code></pre>
   </div>
 
@@ -87,7 +90,7 @@ git clone https://gh.somtfly.com/github.com/owner/repo.git</code></pre>
 
   <h2>5. 调试响应头</h2>
   <div class="card">
-    <p>每次中转响应会带 <code>X-Upstream: &lt;上游名&gt;</code>，便于排查走的是哪条线路。</p>
+    <p>默认直接 302 到最优上游（<code>Location</code> 即镜像直链）；加 <code>?proxy=1</code> 走本机中转时，响应会带 <code>X-Upstream: &lt;上游名&gt;</code>，便于排查走的是哪条线路。</p>
   </div>
 
   <div class="card">
