@@ -205,6 +205,15 @@ def probe_all(hosts: list[str]):
 
 # ---------- 3. 输出 ----------
 
+def atomic_json(path, obj, indent=2):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=indent)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 def make_id(host: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", host.lower()).strip("-")
 
@@ -218,7 +227,7 @@ def emit(good, existing_ids: set[str]):
         region = "cn" if any(s in host for s in ("cn", "china", "233", "top", "xyz")) else "global"
         out.append({"id": uid, "name": host, "kind": kind, "base": f"https://{host}",
                     "region": region, "enabled": True, "_ttfb_ms": ms})
-    json.dump(out, open(OUT, "w"), ensure_ascii=False, indent=2)
+    atomic_json(OUT, out)
     log(f"[3] 写入 {OUT}（{len(out)} 条新上游）")
     return out
 
