@@ -24,6 +24,16 @@ MIN_KEEP = 12
 MAX_DROP_PER_RUN = 40
 
 
+def atomic_json(path, obj, indent=2):
+    """先写 tmp 再 os.replace，避免断写损坏文件（H1）"""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=indent)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 def fetch_health():
     req = urllib.request.Request(API, headers={"User-Agent": "cq-accel-prune/0.1"})
     with urllib.request.urlopen(req, timeout=15) as r:
@@ -79,8 +89,8 @@ def main():
     if dry:
         print("(--dry，不写盘)")
         return
-    json.dump(keep, open(UP, "w"), ensure_ascii=False, indent=2)
-    json.dump({k: v for k, v in state.items() if k not in drop_ids}, open(STATE, "w"), indent=2)
+    atomic_json(UP, keep)
+    atomic_json(STATE, {k: v for k, v in state.items() if k not in drop_ids})
     print("已更新 upstreams.json")
 
 
