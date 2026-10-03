@@ -223,6 +223,13 @@ func (s *Store) View() []UpstreamView {
 		ok, sc, ttfb, sp, ck := u.metrics()
 		out = append(out, UpstreamView{u.ID, u.Name, u.Kind, u.Region, u.Enabled, ok, sc, ttfb, sp, ck})
 	}
+	// 按“可用优先、分数（吞吐主导）从高到低”排序，前端直接呈现快慢顺序
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].OK != out[j].OK {
+			return out[i].OK
+		}
+		return out[i].Score > out[j].Score
+	})
 	return out
 }
 
