@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CQ-Accel · GitHub 加速聚合中转</title>
+<style>
+  :root{--bg:#0b0e14;--card:#131824;--fg:#e6edf3;--dim:#8b949e;--acc:#3fb950;--acc2:#58a6ff;--bd:#232b3a}
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  /* 版心：统一内容宽度、水平居中，两侧留白，窄屏自适应 */
+  .wrap{max-width:960px;margin:0 auto;padding:40px 20px;width:100%}
+  h1{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--dim);margin-bottom:28px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;margin-bottom:20px}
+  input,button{font:inherit}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  input[type=text]{flex:1 1 260px;min-width:0;background:#0d1117;border:1px solid var(--bd);color:var(--fg);border-radius:8px;padding:12px 14px}
+  input[type=text]:focus{outline:none;border-color:var(--acc2)}
+  button{background:var(--acc);color:#03210c;border:0;border-radius:8px;padding:12px 20px;font-weight:600;cursor:pointer}
+  button:hover{filter:brightness(1.1)}
+  .out{margin-top:16px}
+  .link{display:flex;gap:8px;align-items:center;margin:8px 0;background:#0d1117;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;word-break:break-all;overflow-wrap:anywhere;min-width:0}
+  .link code{color:var(--acc2);flex:1;min-width:0;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere}
+  .tag{font-size:12px;padding:2px 8px;border-radius:999px;background:#1f6feb22;color:var(--acc2);border:1px solid #1f6feb55;white-space:nowrap}
+  .tag.cn{background:#3fb95022;color:var(--acc);border-color:#3fb95055}
+  .cp{background:#21262d;color:var(--fg);padding:6px 10px;font-size:12px;border-radius:6px;cursor:pointer}
+  .tblwrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:540px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  th{color:var(--dim);font-weight:500}
+  td.name{white-space:normal;word-break:break-all;overflow-wrap:anywhere}
+  .num{font-size:20px;margin-top:2px}
+  .ok{color:var(--acc)}.bad{color:#f85149}
+  .hint{color:var(--dim);font-size:13px;margin-top:10px}
+  a{color:var(--acc2)}
+  @media(max-width:560px){
+    .wrap{padding:24px 14px}
+    h1{font-size:22px}
+    button#go{width:100%}
+    .card{padding:16px}
+    table{min-width:0}
+    .tblwrap{overflow-x:visible}
+    .c-kind,.c-region{display:none}
+    th,td{padding:8px 6px}
+    .link{flex-direction:column;align-items:stretch}
+    .link code{width:100%;font-size:12px}
+    .link .cp{align-self:flex-end;margin-top:6px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CQ-Accel <span class="tag">聚合中转</span></h1>
+  <div class="sub">贴上 GitHub 链接，自动选最快的加速上游中转下载。公开 · 不限速 · 定时更新节点 <a href="/docs">API 文档 →</a></div>
+
+  <div class="card">
+    <div class="row">
+      <input id="u" type="text" placeholder="https://github.com/owner/repo/releases/download/v1.0/x.zip">
+      <button id="go">加 速</button>
+    </div>
+    <div class="out" id="out"></div>
+    <div class="hint">也支持 raw.githubusercontent.com / codeload.github.com / gist 链接。</div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <strong>流量监控</strong><span class="hint" id="tseen"></span>
+    </div>
+    <div class="row" style="gap:26px">
+      <div><div class="hint">今日请求</div><div class="num" id="treq">-</div></div>
+      <div><div class="hint">今日流量</div><div class="num" id="tbytes">-</div></div>
+      <div><div class="hint">今日独立 IP</div><div class="num" id="tips">-</div></div>
+      <div><div class="hint">累计请求</div><div class="num" id="ttot">-</div></div>
+    </div>
+    <div class="hint" id="ttop" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <strong>上游池</strong><span class="hint" id="ut"></span>
+    </div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>上游</th><th class="c-kind">形态</th><th class="c-region">地区</th><th>状态</th><th>延迟</th><th>速度</th></tr></thead>
+        <tbody id="ups"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>API 用法</strong>
+    <div class="link"><code id="api1"></code><button class="cp" data-t="api1">复制</button></div>
+    <div class="hint">程序里把 <code>https://github.com/...</code> 换成上面的地址即可，支持 Range 断点续传与 HEAD。</div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const base = location.origin;
+// 窄屏用短占位符，避免长 URL 被截断
+if (matchMedia("(max-width:560px)").matches) {
+  $("#u").placeholder = "粘贴 GitHub 链接";
+}
+
+function apiURL(raw){ return base + "/" + raw.replace(/^https?:\/\//,""); }
+$("#api1").textContent = `curl -L -O "${base}/github.com/owner/repo/releases/download/v1.0/x.zip"`;
+
+async function resolve(){
+  const raw = $("#u").value.trim();
+  if(!raw){ return; }
+  $("#out").innerHTML = '<div class="hint">解析中…</div>';
+  try{
+    const r = await fetch("/api/resolve?u=" + encodeURIComponent(raw));
+    if(!r.ok){ $("#out").innerHTML = '<div class="bad">解析失败：'+(await r.text())+'</div>'; return; }
+    const d = await r.json();
+    let h = `<div class="link"><span class="tag">本站中转</span><code>${d.self}</code><button class="cp" data-c="${d.self}">复制</button></div>`;
+    h += '<div class="hint">可选线路（点击复制上游直链）：</div>';
+    for(const u of d.upstreams){
+      h += `<div class="link"><span class="tag ${u.region==='cn'?'cn':''}">${u.region}</span><code>${u.url}</code><button class="cp" data-c="${u.url}">复制</button><span class="tag">${u.name}</span></div>`;
+    }
+    if(!d.upstreams.length) h += '<div class="bad">暂无可用上游</div>';
+    $("#out").innerHTML = h;
+  }catch(e){ $("#out").innerHTML = '<div class="bad">'+e+'</div>'; }
+}
+
+async function loadUps(){
+  try{
+    const d = await (await fetch("/api/upstreams")).json();
+    const okN = d.upstreams.filter(u=>u.ok).length;
+    $("#ut").textContent = `可用 ${okN} / ${d.count} 条`;
+    $("#ups").innerHTML = d.upstreams.map(u=>{
+      const st = u.ok ? '<span class="ok">● 可用</span>' : '<span class="bad">● 不可用</span>';
+      return `<tr><td class="name">${u.name}</td><td class="c-kind">${u.kind}</td><td class="c-region">${u.region}</td><td>${st}</td><td>${u.ttfb_ms||'-'} ms</td><td>${(u.speed_kbps||0).toFixed(0)} KB/s</td></tr>`;
+    }).join("");
+  }catch(e){}
+}
+
+document.addEventListener("click", e=>{
+  const b = e.target.closest(".cp"); if(!b) return;
+  const t = b.dataset.t ? $("#"+b.dataset.t).textContent : b.dataset.c;
+  navigator.clipboard.writeText(t).then(()=>{ b.textContent="已复制"; setTimeout(()=>b.textContent="复制",1200); });
+});
+$("#go").addEventListener("click", resolve);
+$("#u").addEventListener("keydown", e=>{ if(e.key==="Enter") resolve(); });
+loadUps(); setInterval(loadUps, 20000);
+
+function fmtB(n){ if(!n)return '0 B'; const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<4){n/=1024;i++;} return n.toFixed(i?1:0)+' '+u[i]; }
+async function loadTraffic(){
+  try{
+    const d=await (await fetch("/api/traffic")).json();
+    $("#treq").textContent=d.today.req;
+    $("#tbytes").textContent=fmtB(d.today.bytes);
+    $("#tips").textContent=d.today.ips;
+    $("#ttot").textContent=d.total_req;
+    $("#tseen").textContent=d.last_seen?("最近访问 "+(d.last_ip||'-')):"暂无记录";
+    const tu=d.top_upstreams||[];
+    $("#ttop").textContent=tu.length?("热门线路："+tu.slice(0,5).map(x=>x.name+"("+x.req+")").join(" · ")):"";
+  }catch(e){}
+}
+loadTraffic(); setInterval(loadTraffic, 15000);
+</script>
+</body>
+</html>
