@@ -24,13 +24,14 @@ import (
 //	replace  : 把 github 主机名替换为 domain，路径不变
 //	jsdelivr : raw / repos/raw 走 cdn.jsdelivr.net
 type Upstream struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Kind    string `json:"kind"`
-	Base    string `json:"base,omitempty"`
-	Domain  string `json:"domain,omitempty"`
-	Region  string `json:"region,omitempty"`
-	Enabled bool   `json:"enabled"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	Base      string `json:"base,omitempty"`
+	Domain    string `json:"domain,omitempty"`
+	Region    string `json:"region,omitempty"`
+	Enabled   bool   `json:"enabled"`
+	Untrusted bool   `json:"untrusted,omitempty"` // 自动发现入池的上游，谨慎使用
 
 	// 运行时指标（不写回配置文件）
 	OK      bool    `json:"ok"`
@@ -235,7 +236,11 @@ func (s *Store) Candidates(raw string) []*Upstream {
 	for _, u := range s.snapshot() {
 		if u.Enabled && u.CanHandle(raw) {
 			u.mu.Lock()
-			arr = append(arr, sc{u, u.Score})
+			score := u.Score
+			if u.Untrusted {
+				score *= 0.5 // 不可信（自动发现）上游降权，优先人工白名单
+			}
+			arr = append(arr, sc{u, score})
 			u.mu.Unlock()
 		}
 	}
