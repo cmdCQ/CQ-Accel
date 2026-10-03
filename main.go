@@ -128,7 +128,15 @@ func resolveRaw(r *http.Request) (string, bool) {
 }
 
 func relay(w http.ResponseWriter, r *http.Request, raw string) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+	case http.MethodPost:
+		// 只放行 git 智能 HTTP 的 POST（git-upload-pack / git-receive-pack），防开放代理滥用
+		if !isGitRPCPath(r.URL.Path) {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -159,10 +167,25 @@ func relay(w http.ResponseWriter, r *http.Request, raw string) {
 	http.Error(w, "all upstreams failed: "+errStr(lastErr), http.StatusBadGateway)
 }
 
+// isGitRPCPath 判断是否 git 智能 HTTP 的 RPC 端点
+func isGitRPCPath(p string) bool {
+	return strings.Contains(p, "/git-upload-pack") || strings.Contains(p, "/git-receive-pack")
+}
+
 func streamThrough(w http.ResponseWriter, r *http.Request, target string, up *Upstream) (int64, error) {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, target, nil)
 	if err != nil {
 		return 0, err
+	}
+	// git RPC（POST）需要带请求体与相关头
+	if r.Method == http.MethodPost {
+		req.Body = r.Body
+		req.ContentLength = r.ContentLength
+		for _, h := range []string{"Content-Type", "Content-Encoding", "Accept", "Accept-Encoding"} {
+			if v := r.Header.Get(h); v != "" {
+				req.Header.Set(h, v)
+			}
+		}
 	}
 	for _, h := range []string{"Range", "If-Range", "If-None-Match", "If-Modified-Since"} {
 		if v := r.Header.Get(h); v != "" {
