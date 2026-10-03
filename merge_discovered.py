@@ -12,6 +12,15 @@ def host_of(u):
     return (u.get("base") or u.get("domain") or "").replace("https://", "").replace("http://", "").strip("/").lower()
 
 
+def atomic_json(path, obj, indent=2):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=indent)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 def main():
     cur = json.load(open(UP))
     try:
@@ -31,7 +40,7 @@ def main():
         have_host.add(host_of(d))
         added += 1
 
-    json.dump(cur, open(UP, "w"), ensure_ascii=False, indent=2)
+    atomic_json(UP, cur)
     print(f"已合并 {added} 条，upstreams.json 现有 {len(cur)} 条上游")
 
 
